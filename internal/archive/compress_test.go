@@ -14,7 +14,7 @@ import (
 func TestFitKeepsRawWhenCompressionDoesNotShrink(t *testing.T) {
 	t.Parallel()
 
-	got, err := fit(nil, 0)
+	got, err := fit(nil, 0, false)
 	if err != nil {
 		t.Fatalf("fit: %v", err)
 	}
@@ -33,7 +33,7 @@ func TestFitCompressesAndEnforcesLimit(t *testing.T) {
 
 	raw := bytes.Repeat([]byte("wisanggeni "), 4096)
 
-	got, err := fit(raw, 0)
+	got, err := fit(raw, 0, false)
 	if err != nil {
 		t.Fatalf("fit: %v", err)
 	}
@@ -46,10 +46,10 @@ func TestFitCompressesAndEnforcesLimit(t *testing.T) {
 
 	// A budget below the compressed size must be rejected, proving the limit is
 	// applied to the compressed output too.
-	if _, err := fit(raw, int64(len(got.Data))-1); !errors.Is(err, ErrTooLarge) {
+	if _, err := fit(raw, int64(len(got.Data))-1, false); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("fit over limit = %v, want ErrTooLarge", err)
 	}
-	if _, err := fit(raw, int64(len(got.Data))); err != nil {
+	if _, err := fit(raw, int64(len(got.Data)), false); err != nil {
 		t.Fatalf("fit at limit = %v, want success", err)
 	}
 }
