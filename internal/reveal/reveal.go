@@ -33,8 +33,9 @@ type Options struct {
 	// Force allows replacing existing files.
 	Force bool
 
-	// MaxOutput caps the decompressed size. Zero means the archive package's
-	// default; a negative value removes the cap.
+	// MaxOutput caps the decompressed size. Zero or negative means the archive
+	// package's default cap; there is no way to lift it, so a payload cannot
+	// expand without bound (docs/FORMAT.md §13.1).
 	MaxOutput int64
 
 	// Passphrase must be the one the blob was sealed with.

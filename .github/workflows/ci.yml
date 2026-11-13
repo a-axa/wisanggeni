@@ -79,3 +79,18 @@ jobs:
       - name: check stc reference vectors
         if: hashFiles('detector/stc_ref.py') != ''
         run: python detector/stc_ref.py --check internal/stego/testdata/stc_vectors.json
+      # Build the binary so the steganalysis self-check can produce a real carrier
+      # rather than only a synthetic control. The check asserts three things: the
+      # pairs-of-values attack flags LSB replacement, it does not flag the clean
+      # cover, and it does not flag the Wisanggeni carrier. A regression in the
+      # embedder that started equalising histogram pairs would fail here.
+      - uses: actions/setup-go@v5
+        if: hashFiles('detector/steganalysis.py') != ''
+        with:
+          go-version: '1.26.x'
+      - name: build wisanggeni for the steganalysis check
+        if: hashFiles('detector/steganalysis.py') != ''
+        run: go build -o /tmp/wisanggeni .
+      - name: steganalysis self-check
+        if: hashFiles('detector/steganalysis.py') != ''
+        run: python detector/steganalysis.py --make-samples /tmp/g3 --self-check --binary /tmp/wisanggeni
