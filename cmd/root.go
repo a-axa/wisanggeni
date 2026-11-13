@@ -112,6 +112,30 @@ func notImplemented(name string) error {
 	return fail(ExitError, "%s is not implemented yet", name)
 }
 
+// flagString reads a string flag that the command itself declared, so the error
+// pflag would return for an unknown flag cannot happen here.
+func flagString(cmd *cobra.Command, name string) string {
+	v, _ := cmd.Flags().GetString(name)
+	return v
+}
+
+// flagBool reads a bool flag that the command itself declared.
+func flagBool(cmd *cobra.Command, name string) bool {
+	v, _ := cmd.Flags().GetBool(name)
+	return v
+}
+
+// notifier returns a warning printer that respects --quiet. Warnings go to
+// stderr so they never contaminate a redirected stdout.
+func notifier(cmd *cobra.Command, quiet bool) func(string, ...any) {
+	if quiet {
+		return func(string, ...any) {}
+	}
+	return func(format string, args ...any) {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "wisanggeni: "+format+"\n", args...)
+	}
+}
+
 // isTerminal reports whether w is a terminal, which the TUI requires (§5.2).
 func isTerminal(w io.Writer) bool {
 	f, ok := w.(*os.File)

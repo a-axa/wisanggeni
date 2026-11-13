@@ -38,9 +38,29 @@ var (
 	ErrCarrierInside = errors.New("archive: carrier or output is inside an input folder")
 
 	// ErrTooLarge reports a payload that cannot fit the caller's byte budget.
-	// The CLI maps it to exit code 2.
+	// The CLI maps it to exit code 2. Errors that wrap it are *TooLargeError
+	// and carry the sizes.
 	ErrTooLarge = errors.New("archive: payload exceeds the available capacity")
 )
+
+// TooLargeError is the ErrTooLarge failure with the numbers the CLI prints:
+// how big the payload is and how much room it had.
+type TooLargeError struct {
+	// Uncompressed is the tar size before compression. Compression only makes
+	// it smaller, so comparing it with Limit is the pessimistic check.
+	Uncompressed int64
+
+	// Limit is the caller's byte budget.
+	Limit int64
+}
+
+func (e *TooLargeError) Error() string {
+	return fmt.Sprintf("archive: payload is %d bytes uncompressed, limit is %d bytes",
+		e.Uncompressed, e.Limit)
+}
+
+// Unwrap makes errors.Is(err, ErrTooLarge) work.
+func (e *TooLargeError) Unwrap() error { return ErrTooLarge }
 
 // Options controls Pack.
 type Options struct {
@@ -51,6 +71,10 @@ type Options struct {
 	// Exclude lists the carrier and output paths. If one of them is found
 	// inside an input folder the walk fails with ErrCarrierInside.
 	Exclude []string
+
+	// NoCompress keeps the tar uncompressed, for `hide --no-compress`. Data is
+	// then the raw tar and Compressed is false.
+	NoCompress bool
 }
 
 // Packed is the payload for the container body.
@@ -112,7 +136,7 @@ func Pack(inputs []string, opts Options) (Packed, error) {
 		return Packed{}, err
 	}
 
-	return fit(tarData, opts.MaxBytes)
+	return fit(tarData, opts.MaxBytes, opts.NoCompress)
 }
 
 // collectRoots resolves each input and rejects the cases §5.1 calls errors:
@@ -290,16 +314,17 @@ func writeFile(tw *tar.Writer, e entry) error {
 // Compression aborts as soon as its output passes maxBytes, since zstd output
 // only grows from there; the raw tar is then the fallback. Compression is used
 // only when it is actually smaller, which is the "skip compress if not smaller"
-// rule of §5.1.
-func fit(tarData []byte, maxBytes int64) (Packed, error) {
-	compressed, compressedOK := compress(tarData, maxBytes)
-	if compressedOK && len(compressed) < len(tarData) {
-		return Packed{Data: compressed, Compressed: true}, nil
+// rule of §5.1. When NoCompress is set the tar is passed through unchanged.
+func fit(tarData []byte, maxBytes int64, noCompress bool) (Packed, error) {
+	if !noCompress {
+		compressed, compressedOK := compress(tarData, maxBytes)
+		if compressedOK && len(compressed) < len(tarData) {
+			return Packed{Data: compressed, Compressed: true}, nil
+		}
 	}
 
 	if maxBytes > 0 && int64(len(tarData)) > maxBytes {
-		return Packed{}, fmt.Errorf("%w: payload is at least %d bytes, limit is %d",
-			ErrTooLarge, len(tarData), maxBytes)
+		return Packed{}, &TooLargeError{Uncompressed: int64(len(tarData)), Limit: maxBytes}
 	}
 	return Packed{Data: tarData}, nil
 }
