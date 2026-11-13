@@ -170,6 +170,29 @@ func TestReadStdinWithoutNewline(t *testing.T) {
 	}
 }
 
+// TestLookExplicitSources covers the sources that are known without touching the
+// terminal. The no-flag case depends on the machine running the test, so it is
+// deliberately not asserted here.
+func TestLookExplicitSources(t *testing.T) {
+	t.Parallel()
+	term := &stubTerminal{}
+	for _, tc := range []struct {
+		name string
+		opts prompt.Options
+		want bool
+	}{
+		{name: "file", opts: prompt.Options{File: "/tmp/does-not-need-to-exist"}, want: true},
+		{name: "stdin", opts: prompt.Options{FromStdin: true}, want: true},
+		{name: "terminal stub", opts: prompt.Options{Term: term}, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := prompt.Look(tc.opts); got != tc.want {
+				t.Fatalf("Look(%+v) = %v, want %v", tc.opts, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestReadTerminalConfirm(t *testing.T) {
 	t.Parallel()
 	term := &stubTerminal{secrets: [][]byte{[]byte("a strong passphrase"), []byte("a strong passphrase")}}

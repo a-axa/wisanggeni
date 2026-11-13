@@ -106,12 +106,6 @@ func addPassphraseFlags(cmd *cobra.Command) {
 	cmd.MarkFlagsMutuallyExclusive("passphrase-file", "passphrase-stdin")
 }
 
-// notImplemented marks a stub created by A3. Each stub is replaced by its own
-// phase; failing loudly beats silently doing nothing.
-func notImplemented(name string) error {
-	return fail(ExitError, "%s is not implemented yet", name)
-}
-
 // flagString reads a string flag that the command itself declared, so the error
 // pflag would return for an unknown flag cannot happen here.
 func flagString(cmd *cobra.Command, name string) string {
