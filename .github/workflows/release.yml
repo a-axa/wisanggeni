@@ -1,0 +1,37 @@
+name: release
+
+# Runs only on a version tag. The tag is what makes §6.1 of docs/FORMAT.md
+# frozen: after v1.0.0, changing any format constant means a new version, so the
+# release is the moment the contract stops moving.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # GoReleaser reads the changelog from the full history.
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          # Pinned for the same reason as ci.yml: macOS 26 rejects binaries
+          # without LC_UUID from older toolchains.
+          go-version: '1.26.x'
+          cache: true
+      # Gate the release on the full suite, so a tag cannot publish a build that
+      # the ordinary CI would have rejected.
+      - name: test
+        run: go test -race ./...
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

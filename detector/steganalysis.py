@@ -294,11 +294,21 @@ def wisanggeni_carrier(binary, cover, outdir, fill=0.05):
     import tempfile
 
     width, height, _ = read_png_rgb(cover)
-    # 8 bits per channel at the requested fraction of raw capacity.
+    # 8 bits per channel at the requested fraction of raw capacity. The payload
+    # is incompressible on purpose: a compressible one would shrink in the
+    # archive layer and land at a fill well below the requested figure, which
+    # would make the reported number misleading.
     body = int(width * height * 3 / 8 * fill) - 112
     payload = os.path.join(outdir, "payload.bin")
+    state = 0xC0FFEE11
+    data = bytearray()
+    for _ in range(body):
+        state ^= (state << 13) & 0xFFFFFFFF
+        state ^= state >> 17
+        state ^= (state << 5) & 0xFFFFFFFF
+        data.append(state & 0xFF)
     with open(payload, "wb") as fh:
-        fh.write(bytes((i * 7 + 11) & 0xFF for i in range(body)))
+        fh.write(bytes(data))
 
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as pf:
         pf.write("steganalysis passphrase\n")

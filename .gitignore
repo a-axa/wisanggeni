@@ -10,3 +10,7 @@ dist/
 /tmp-pty/
 /tmp-pty2/
 /tmp-demo/
+
+# python bytecode from the detector tooling
+__pycache__/
+*.pyc
