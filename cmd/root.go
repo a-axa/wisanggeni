@@ -125,6 +125,12 @@ func flagBool(cmd *cobra.Command, name string) bool {
 	return v
 }
 
+// flagInt64 reads an int64 flag that the command itself declared.
+func flagInt64(cmd *cobra.Command, name string) int64 {
+	v, _ := cmd.Flags().GetInt64(name)
+	return v
+}
+
 // notifier returns a warning printer that respects --quiet. Warnings go to
 // stderr so they never contaminate a redirected stdout.
 func notifier(cmd *cobra.Command, quiet bool) func(string, ...any) {
