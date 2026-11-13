@@ -183,12 +183,17 @@ func maskLess(a, b uint16) bool {
 }
 
 // EmbedSTC writes data into the pool channels named by positions, one message
-// byte per block of STCWidth channels (§7.4, §10).
+// byte per block of STCWidth channels (§7.4, §10). It draws a fresh direction
+// stream for LSB matching; EmbedBlob seeds its own from the container.
 //
 // costs is the cost map indexed by channel, as CostMap returns it. len(positions)
 // must cover STCWidth channels per byte of data, and no position may repeat a
 // salt channel — a prefix of PoolPositions satisfies both.
 func EmbedSTC(img *image.NRGBA, positions []uint32, data []byte, costs []float64) error {
+	return embedSTC(img, positions, data, costs, NewFlip())
+}
+
+func embedSTC(img *image.NRGBA, positions []uint32, data []byte, costs []float64, flip Flip) error {
 	if len(data) == 0 {
 		return nil
 	}
@@ -238,7 +243,7 @@ func EmbedSTC(img *image.NRGBA, positions []uint32, data []byte, costs []float64
 			off := channelOffset(img, positions[base+i])
 			// matchLSB takes the bit the channel must end up with.
 			want := byte(1) - byte((coverBits>>uint(i))&1)
-			img.Pix[off] = matchLSB(img.Pix[off], want, randomFlip())
+			img.Pix[off] = matchLSB(img.Pix[off], want, flip())
 		}
 	}
 	return nil

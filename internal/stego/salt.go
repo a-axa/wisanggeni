@@ -30,9 +30,14 @@ func SaltPositions(channels uint32) []uint32 {
 	return Shuffle(uint64(channels), saltSeed, SaltChannels)
 }
 
-// EmbedSalt writes the salt with LSB matching at S (§7.2, §7.6).
+// EmbedSalt writes the salt with LSB matching at S (§7.2, §7.6). It draws a
+// fresh direction stream; EmbedBlob seeds its own from the container.
 func EmbedSalt(img *image.NRGBA, salt []byte) error {
-	return EmbedBytes(img, SaltPositions(ChannelCount(img)), salt)
+	return embedSalt(img, salt, NewFlip())
+}
+
+func embedSalt(img *image.NRGBA, salt []byte, flip Flip) error {
+	return embedBits(img, SaltPositions(ChannelCount(img)), BytesToBits(salt), flip)
 }
 
 // ExtractSalt reads size bytes from S. It does not need any key.
@@ -42,7 +47,7 @@ func ExtractSalt(img *image.NRGBA, size int) ([]byte, error) {
 
 // EmbedBits writes one bit per position, MSB first, using LSB matching (§7.6).
 func EmbedBits(img *image.NRGBA, positions []uint32, bits []byte) error {
-	return embedBits(img, positions, bits, randomFlip)
+	return embedBits(img, positions, bits, NewFlip())
 }
 
 // ExtractBits reads one bit from each position, up to n bits.
@@ -52,7 +57,7 @@ func ExtractBits(img *image.NRGBA, positions []uint32, n int) ([]byte, error) {
 
 // EmbedBytes writes data MSB-first into the channels named by positions.
 func EmbedBytes(img *image.NRGBA, positions []uint32, data []byte) error {
-	return embedBits(img, positions, BytesToBits(data), randomFlip)
+	return embedBits(img, positions, BytesToBits(data), NewFlip())
 }
 
 // ExtractBytes reads size bytes from the channels named by positions.
@@ -69,7 +74,7 @@ func ExtractBytes(img *image.NRGBA, positions []uint32, size int) ([]byte, error
 
 // embedBits is the single write path; flip decides which way a value moves when
 // its LSB must change, and is injectable so tests can pin the resulting pixels.
-func embedBits(img *image.NRGBA, positions []uint32, bits []byte, flip func() bool) error {
+func embedBits(img *image.NRGBA, positions []uint32, bits []byte, flip Flip) error {
 	channels := ChannelCount(img)
 	if channels == 0 {
 		return ErrTooSmall

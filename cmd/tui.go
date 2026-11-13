@@ -27,8 +27,18 @@ func runTUI(cmd *cobra.Command) error {
 	if !isTerminal(out) {
 		return fail(ExitError, "stdout is not a terminal; use the subcommands instead")
 	}
-	program := tea.NewProgram(
-		tui.New(cmd.Root().Version),
+	// The worker goroutines behind a hide/reveal job cannot touch the Model
+	// directly, so they post stage updates through tea.Program.Send. The model is
+	// built before the program exists, hence the indirection: the closure captures
+	// the variable that is assigned on the next line.
+	var program *tea.Program
+	model := tui.New(cmd.Root().Version).WithSender(func(msg tea.Msg) {
+		if program != nil {
+			program.Send(msg)
+		}
+	})
+	program = tea.NewProgram(
+		model,
 		tea.WithAltScreen(),
 		tea.WithOutput(out),
 	)
