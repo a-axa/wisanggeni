@@ -369,3 +369,26 @@ Compression is applied only when it makes the payload strictly smaller; the
 `zstd` output is compared against the raw tar and the smaller one wins, with the
 flag set accordingly. `Pack` caps the result at the caller's byte budget
 (`Capacity(w,h)`), so an oversized payload fails rather than being truncated.
+
+### 13.1 Extraction (`Unpack`)
+
+The reader treats `body_plain` as hostile: it was authenticated, but the
+archive inside may still have been crafted by a different writer version or a
+malicious packer.
+
+- Headers are all validated before the first byte is written, so a rejected
+  archive leaves nothing behind.
+- Entry names must stay local: absolute paths, `..` components, NUL bytes and
+  anything `filepath.IsLocal` rejects are refused. Backslashes count as
+  separators only on Windows.
+- Only regular files and directories are accepted. Symlink, hardlink, device
+  and FIFO entries are refused rather than recreated.
+- The joined destination is re-checked against the output directory, and every
+  parent component is created with `Lstat` so a pre-existing symlink cannot
+  redirect a write outside. New files are opened `O_EXCL`, so an existing path
+  is never written through.
+- Mode is masked to `0o777`, dropping setuid and setgid. `mtime` is not
+  restored, matching §5.1.
+- Decompressed output is capped (`--max-output`, default 1 GiB). The zstd
+  reader is limited too, so a decompression bomb stops early.
+- Duplicate entry names are rejected, since no correct writer emits them.
