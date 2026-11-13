@@ -107,3 +107,77 @@ func fireColor(t float64) string {
 	}
 	return fireStops[len(fireStops)-1].c.hex()
 }
+
+// spinFrames is the working indicator. Braille dots read as motion at any
+// terminal width and cost one cell.
+const spinFrames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+// spinner returns the frame's glyph.
+func spinner(frame int) string {
+	return string([]rune(spinFrames)[frame%10])
+}
+
+// emberBand paints a band of fire, the same ramp as the wordmark. The wizard
+// uses it as its busy indicator: the name means fire, and motion in one place
+// is enough.
+func emberBand(frame, width, rows int) []string {
+	if width <= 0 || rows <= 0 {
+		return nil
+	}
+	out := make([]string, rows)
+	for row := 0; row < rows; row++ {
+		out[row] = emberLine(frame, width, row, rows)
+	}
+	return out
+}
+
+func emberLine(frame, width, row, rows int) string {
+	// Heat climbs towards the bottom row, where the fire is hottest.
+	base := 0.32 + 0.5*float64(row)/float64(max(rows-1, 1))
+	heat := func(col int) float64 {
+		return base + 0.34*(flicker(col, frame+row*13)-0.5)
+	}
+	glyph := func(t float64) rune {
+		switch {
+		case t < 0.38:
+			return ' '
+		case t < 0.52:
+			return '░'
+		case t < 0.66:
+			return '▒'
+		case t < 0.80:
+			return '▓'
+		default:
+			return '█'
+		}
+	}
+
+	var b strings.Builder
+	b.Grow(width * 3)
+	for col := 0; col < width; {
+		t := heat(col)
+		if glyph(t) == ' ' {
+			b.WriteRune(' ')
+			col++
+			continue
+		}
+		step := heatStep(t)
+		j := col + 1
+		for j < width {
+			tj := heat(j)
+			if glyph(tj) == ' ' || heatStep(tj) != step {
+				break
+			}
+			j++
+		}
+		var run strings.Builder
+		for k := col; k < j; k++ {
+			run.WriteRune(glyph(heat(k)))
+		}
+		b.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color(fireColor(float64(step) / (heatLevels - 1)))).
+			Render(run.String()))
+		col = j
+	}
+	return b.String()
+}

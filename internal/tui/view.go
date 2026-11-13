@@ -46,12 +46,20 @@ func (m Model) panelView(box int) string {
 		Render(body)
 }
 
+// maxRows is how many content rows fit between the panel border and the hint
+// bar. Anything beyond it would push the frame off screen.
+func (m Model) maxRows() int { return m.height - 5 }
+
 func (m Model) screenRows(inner int) []string {
 	switch m.screen {
 	case screenMenu:
 		return m.menuRows(inner)
 	case screenHelp:
 		return m.helpRows()
+	case screenHide:
+		return m.hideRows(inner, m.maxRows())
+	case screenReveal:
+		return m.revealRows(inner, m.maxRows())
 	default:
 		return m.flowRows()
 	}
@@ -91,6 +99,7 @@ func (m Model) helpRows() []string {
 		{"Enter", "select or continue"},
 		{"Space", "add or remove an input in Hide"},
 		{"Tab", "move between fields"},
+		{"→ / ←", "enter or leave a folder in a picker"},
 		{"Esc", "back"},
 		{"q", "quit"},
 		{"?", "toggle this help"},
@@ -112,30 +121,93 @@ func (m Model) flowRows() []string {
 	}
 }
 
+// hint is one key/description pair in the footer.
+func hint(key, desc string) string {
+	return styleAccent.Render(key) + styleDim.Render(" "+desc)
+}
+
 func (m Model) hintBar(box int) string {
-	sep := styleDim.Render("   ")
 	var hints []string
 	switch m.screen {
 	case screenMenu:
 		hints = []string{
-			styleAccent.Render("↑/↓") + styleDim.Render(" move"),
-			styleAccent.Render("enter") + styleDim.Render(" select"),
-			styleAccent.Render("?") + styleDim.Render(" help"),
-			styleAccent.Render("q") + styleDim.Render(" quit"),
+			hint("↑/↓", "move"),
+			hint("enter", "select"),
+			hint("?", "help"),
+			hint("q", "quit"),
 		}
 	case screenHelp:
-		hints = []string{
-			styleAccent.Render("esc") + styleDim.Render(" close"),
-			styleAccent.Render("q") + styleDim.Render(" quit"),
-		}
+		hints = []string{hint("esc", "close"), hint("q", "quit")}
+	case screenHide:
+		hints = m.hideHints()
+	case screenReveal:
+		hints = m.revealHints()
 	default:
-		hints = []string{
-			styleAccent.Render("esc") + styleDim.Render(" back"),
-			styleAccent.Render("?") + styleDim.Render(" help"),
-			styleAccent.Render("q") + styleDim.Render(" quit"),
-		}
+		hints = []string{hint("esc", "back"), hint("?", "help"), hint("q", "quit")}
 	}
-	return lipgloss.PlaceHorizontal(box, lipgloss.Center, strings.Join(hints, sep))
+	return lipgloss.PlaceHorizontal(box, lipgloss.Center, joinHints(hints, box))
+}
+
+// joinHints drops trailing hints until the bar fits, so a long key list never
+// wraps the footer onto two lines.
+func joinHints(hints []string, box int) string {
+	const sep = "   "
+	for len(hints) > 1 {
+		line := strings.Join(hints, sep)
+		if lipgloss.Width(line) <= box {
+			return line
+		}
+		hints = hints[:len(hints)-1]
+	}
+	return strings.Join(hints, sep)
+}
+
+// hideHints lists the live keys of the current hide step.
+func (m Model) hideHints() []string {
+	switch m.hide.step {
+	case stepInput:
+		return []string{
+			hint("↑/↓", "move"), hint("space", "add/remove"), hint("→", "open folder"),
+			hint("tab", "path"), hint("enter", "next"), hint("esc", "back"),
+		}
+	case stepCarrier:
+		return []string{
+			hint("↑/↓", "move"), hint("→", "open folder"), hint("tab", "path"),
+			hint("enter", "choose"), hint("esc", "back"),
+		}
+	case stepReport:
+		return []string{
+			hint("space", "force"), hint("tab", "output"), hint("enter", "continue"),
+			hint("esc", "back"),
+		}
+	case stepSecret:
+		return []string{
+			hint("tab", "field"), hint("enter", "hide"), hint("esc", "back"),
+		}
+	case stepWorking:
+		return []string{hint("…", "embedding - this cannot be cancelled"), hint("q", "quit")}
+	case stepDone:
+		return []string{hint("enter", "menu"), hint("q", "quit")}
+	}
+	return nil
+}
+
+// revealHints lists the live keys of the current reveal step.
+func (m Model) revealHints() []string {
+	switch m.reveal.step {
+	case revealPick:
+		return []string{
+			hint("↑/↓", "move"), hint("→", "open folder"), hint("tab", "field"),
+			hint("space", "overwrite"), hint("enter", "choose"), hint("esc", "back"),
+		}
+	case revealSecret:
+		return []string{hint("enter", "reveal"), hint("esc", "back")}
+	case revealWorking:
+		return []string{hint("…", "decrypting"), hint("q", "quit")}
+	case revealDone:
+		return []string{hint("enter", "menu"), hint("q", "quit")}
+	}
+	return nil
 }
 
 // viewTooSmall is the one screen that ignores the frame: it has to render
