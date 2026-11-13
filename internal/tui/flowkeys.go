@@ -152,8 +152,16 @@ func (m Model) hideInputKey(k tea.KeyMsg) (Model, tea.Cmd, bool) {
 	case keyTab(k):
 		w.pick.typing = true
 	case keySelect(k):
+		// Enter opens a folder, the same as → and the same as every other picker
+		// in the TUI. Space is the key that adds a folder as an input; treating
+		// Enter as "move on" here made a folder row look broken, because the
+		// wizard refused to advance while nothing was chosen.
+		if entry, ok := w.pick.current(); ok && entry.dir {
+			w.pick.descend()
+			break
+		}
 		if len(w.inputs) == 0 {
-			w.pick.note = "choose at least one file or folder first"
+			w.pick.note = "space adds the highlighted row - then enter moves on"
 			break
 		}
 		w.step = stepCarrier
