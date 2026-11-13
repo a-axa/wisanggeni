@@ -163,8 +163,8 @@ func (m Model) hideHints() []string {
 	switch m.hide.step {
 	case stepInput:
 		return []string{
-			hint("↑/↓", "move"), hint("space", "add/remove"), hint("→", "open folder"),
-			hint("tab", "path"), hint("enter", "next"), hint("esc", "back"),
+			hint("↑/↓", "move"), hint("space", "add/remove"),
+			hint("enter", "open folder / next"), hint("tab", "path"), hint("esc", "back"),
 		}
 	case stepCarrier:
 		return []string{

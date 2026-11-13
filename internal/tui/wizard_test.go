@@ -296,6 +296,80 @@ func TestHideWizardMatchesEngine(t *testing.T) {
 	}
 }
 
+// TestHideInputEnterOpensFolder guards the picker's one rule: Enter is the same
+// verb in every list. On the input step it opens a folder, so a user who presses
+// Enter on a folder row does not get "choose something first" - which looked
+// like a broken folder - and the hint on the row says so.
+func TestHideInputEnterOpensFolder(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	writeFile(t, filepath.Join(dir, "docs", "FORMAT.md"), []byte("format\n"))
+	writeFile(t, filepath.Join(dir, "aa.txt"), []byte("a\n"))
+
+	m := resize(t, New("test"), 120, 40)
+	m = press(t, m, "enter") // open Hide
+	// Point the picker straight at the fixture: the picker opens on the package
+	// directory during a test, and the manual path field adds an input rather
+	// than navigating.
+	m.hide.pick.dir = dir
+	m.hide.pick.cursor = 0
+	m.hide.pick.reload()
+	m.hide.inputs = nil
+	if entry, ok := m.hide.pick.current(); !ok || entry.name != "docs" {
+		t.Fatalf("cursor is not on docs/: %+v (ok %v)", entry, ok)
+	}
+
+	m = press(t, m, "enter")
+	if m.hide.step != stepInput {
+		t.Fatalf("step = %v, want stepInput: enter on a folder must not leave the step", m.hide.step)
+	}
+	if got, want := m.hide.pick.dir, filepath.Join(dir, "docs"); got != want {
+		t.Fatalf("picker dir = %q, want %q", got, want)
+	}
+	if len(m.hide.inputs) != 0 {
+		t.Fatalf("opening a folder must not choose anything, got %d inputs", len(m.hide.inputs))
+	}
+	if m.hide.pick.note != "" {
+		t.Fatalf("note after opening a folder = %q, want none", m.hide.pick.note)
+	}
+
+	// Space is still the key that chooses a folder, including the folder the user
+	// is now standing in.
+	m = press(t, m, " ")
+	if len(m.hide.inputs) != 1 {
+		t.Fatalf("chosen inputs = %d after space, want 1 (note %q)", len(m.hide.inputs), m.hide.pick.note)
+	}
+	m = press(t, m, "enter") // with something chosen, enter moves on
+	if m.hide.step != stepCarrier {
+		t.Fatalf("step = %v, want stepCarrier", m.hide.step)
+	}
+}
+
+// TestHideInputEnterWithNothingChosen checks that Enter on a file before
+// choosing anything explains space instead of advancing into a failure.
+func TestHideInputEnterWithNothingChosen(t *testing.T) {
+	dir := t.TempDir()
+	m := resize(t, New("test"), 120, 40)
+	m = press(t, m, "enter") // open Hide
+	writeFile(t, filepath.Join(dir, "note.txt"), []byte("note\n"))
+	m.hide.pick.dir = dir
+	m.hide.pick.cursor = 0
+	m.hide.pick.reload()
+
+	m = press(t, m, "enter")
+	if m.hide.step != stepInput {
+		t.Fatalf("step = %v, want stepInput", m.hide.step)
+	}
+	if !strings.Contains(m.hide.pick.note, "space") {
+		t.Fatalf("note = %q, want it to name the space key", m.hide.pick.note)
+	}
+	if view := m.View(); !strings.Contains(view, "open folder / next") {
+		t.Errorf("the hint bar should say enter opens folders, got:\n%s", view)
+	}
+}
+
 // TestHideWizardRejectsSmallCarrier checks that a carrier with no room fails on
 // the report screen with the CLI's exit code, before any passphrase is asked for.
 func TestHideWizardRejectsSmallCarrier(t *testing.T) {
