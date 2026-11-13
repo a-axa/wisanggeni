@@ -24,6 +24,11 @@ var ErrVerify = errors.New("stego: verification failed")
 // blob must be at least format.SaltSize bytes and the carrier must have room for
 // the salt plus STCWidth channels per payload byte; see CapacityRaw for the
 // maximum.
+//
+// The LSB-matching direction stream is derived from blob, so the embed is a pure
+// function of (cover, blob, posSeed, costs): the same container lands on the same
+// pixels every time, which is what makes two writers comparable byte for byte
+// (§6, §7.6).
 func EmbedBlob(img *image.NRGBA, blob []byte, posSeed [32]byte, costs []float64) error {
 	channels := ChannelCount(img)
 	if channels == 0 {
@@ -34,8 +39,12 @@ func EmbedBlob(img *image.NRGBA, blob []byte, posSeed [32]byte, costs []float64)
 			ErrTooSmall, len(blob), format.SaltSize)
 	}
 
+	// One direction stream for the whole blob, so the salt and the payload cannot
+	// desynchronise from each other.
+	flip := blobFlip(blob)
+
 	// §7.8 step 11: salt first, at S.
-	if err := EmbedSalt(img, blob[:format.SaltSize]); err != nil {
+	if err := embedSalt(img, blob[:format.SaltSize], flip); err != nil {
 		return err
 	}
 
@@ -44,7 +53,7 @@ func EmbedBlob(img *image.NRGBA, blob []byte, posSeed [32]byte, costs []float64)
 	// EmbedSTC then reports as too small.
 	payload := blob[format.SaltSize:]
 	positions := PoolPositions(channels, posSeed, len(payload)*STCWidth)
-	return EmbedSTC(img, positions, payload, costs)
+	return embedSTC(img, positions, payload, costs, flip)
 }
 
 // ExtractBlob reads a whole blob back from a carrier without any crypto (§7.9

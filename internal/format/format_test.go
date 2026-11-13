@@ -65,12 +65,14 @@ func TestFrozenLabels(t *testing.T) {
 	want := map[string]string{
 		"LabelSaltPos": format.LabelSaltPos,
 		"LabelSTC":     format.LabelSTC,
+		"LabelFlip":    format.LabelFlip,
 		"InfoEncKey":   format.InfoEncKey,
 		"InfoPosSeed":  format.InfoPosSeed,
 	}
 	expect := map[string]string{
 		"LabelSaltPos": "wisanggeni/v1/salt-pos",
 		"LabelSTC":     "wisanggeni/v1/stc",
+		"LabelFlip":    "wisanggeni/v1/flip",
 		"InfoEncKey":   "wisanggeni/v1/enc",
 		"InfoPosSeed":  "wisanggeni/v1/pos",
 	}
