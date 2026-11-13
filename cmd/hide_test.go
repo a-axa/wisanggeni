@@ -14,6 +14,8 @@ import (
 	"github.com/a-axa/wisanggeni/internal/carrier"
 	"github.com/a-axa/wisanggeni/internal/crypto"
 	"github.com/a-axa/wisanggeni/internal/format"
+	"github.com/a-axa/wisanggeni/internal/hide"
+	"github.com/a-axa/wisanggeni/internal/reveal"
 	"github.com/a-axa/wisanggeni/internal/stego"
 )
 
@@ -93,30 +95,6 @@ func codeOf(err error) int {
 		return coded.ExitCode()
 	}
 	return ExitError
-}
-
-func TestClassifyFill(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		fill  float64
-		force bool
-		want  fillDecision
-	}{
-		{0.01, false, fillOK},
-		{0.05, false, fillOK},
-		{0.06, false, fillWarn},
-		{0.10, false, fillWarn},
-		{0.11, false, fillNeedForce},
-		{0.11, true, fillWarn},
-		{0.50, true, fillWarn},
-		{0.51, true, fillReject},
-		{0.99, false, fillReject},
-	}
-	for _, tc := range cases {
-		if got := classifyFill(tc.fill, tc.force); got != tc.want {
-			t.Fatalf("classifyFill(%.2f, %v) = %d, want %d", tc.fill, tc.force, got, tc.want)
-		}
-	}
 }
 
 func TestHideRoundTrip(t *testing.T) {
@@ -377,69 +355,73 @@ func TestHideLeavesNoTemporaryFiles(t *testing.T) {
 	}
 }
 
-// TestVerifyOutputCatchesCorruption embeds a real blob, saves it, flips one
-// channel, and checks that verification reports the documented exit code.
-func TestVerifyOutputCatchesCorruption(t *testing.T) {
-	carrierPath := saveImage(t, noiseImage(96, 96))
+// TestHideCLIMatchesEngine proves the CLI adds nothing to the pipeline. It runs
+// a real hide, reads the salt and both AEAD nonces back out of the written image,
+// and repeats the same job through internal/hide with every random input pinned.
+// The bytes must be identical: the CLI is a thin wrapper over the engine, and the
+// engine is what the TUI wizard calls, so this is what keeps the two surfaces
+// byte-identical.
+func TestHideCLIMatchesEngine(t *testing.T) {
+	carrierPath := saveImage(t, noiseImage(256, 256))
 	input := filepath.Join(t.TempDir(), "note.txt")
-	writeBytes(t, input, []byte("hello wisanggeni"))
+	writeBytes(t, input, bytes.Repeat([]byte("wisanggeni "), 20))
+	pass := "correct horse battery staple"
 
-	capacity := stego.Capacity(96, 96)
-	packed, err := archive.Pack([]string{input}, archive.Options{MaxBytes: capacity})
+	cliOut := filepath.Join(t.TempDir(), "cli.png")
+	if _, stderr, err := runHideCLI(t, input, "-c", carrierPath, "-o", cliOut,
+		"--passphrase-file", passFile(t, pass)); err != nil {
+		t.Fatalf("hide: %v (stderr %s)", err, stderr)
+	}
+	cliBytes, err := os.ReadFile(cliOut)
 	if err != nil {
-		t.Fatalf("pack: %v", err)
+		t.Fatalf("read CLI output: %v", err)
 	}
 
-	salt := make([]byte, format.SaltSize)
-	if _, err := rand.Read(salt); err != nil {
-		t.Fatalf("rand: %v", err)
+	// Every random value the writer used is recoverable from its own output: the
+	// salt sits at public positions, and the nonces are the first bytes of the
+	// payload the salt keys.
+	written, err := carrier.Load(cliOut)
+	if err != nil {
+		t.Fatalf("load CLI output: %v", err)
 	}
-	keys, err := crypto.Derive("correct horse battery staple", salt)
+	salt, err := stego.ExtractSalt(written.Image, format.SaltSize)
+	if err != nil {
+		t.Fatalf("extract salt: %v", err)
+	}
+	keys, err := crypto.Derive(pass, salt)
 	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
-	blob, err := crypto.Seal(keys.EncKey, salt, format.FlagZstd, packed.Data)
+	prefix, err := reveal.ExtractAt(written.Image, keys.PosSeed, 0, reveal.PayloadPrefix)
 	if err != nil {
-		t.Fatalf("seal: %v", err)
+		t.Fatalf("extract prefix: %v", err)
+	}
+	nonces := &hide.Nonces{
+		Header: prefix[:format.NonceSize],
+		Body:   prefix[format.NonceSize+format.HeaderCipherSize:],
 	}
 
-	car, err := carrier.Load(carrierPath)
+	engineOut := filepath.Join(t.TempDir(), "engine.png")
+	result, err := hide.Run(hide.Options{
+		Inputs:      []string{input},
+		CarrierPath: carrierPath,
+		OutputPath:  engineOut,
+		Passphrase:  []byte(pass),
+		Salt:        salt,
+		Nonces:      nonces,
+	})
 	if err != nil {
-		t.Fatalf("load: %v", err)
+		t.Fatalf("engine run: %v", err)
 	}
-	if err := stego.EmbedBlob(car.Image, blob, keys.PosSeed, stego.CostMap(car.Image)); err != nil {
-		t.Fatalf("embed: %v", err)
-	}
-	good := filepath.Join(t.TempDir(), "good.png")
-	if err := carrier.Save(good, car.Image, car.Chunks); err != nil {
-		t.Fatalf("save: %v", err)
-	}
-	if err := verifyOutput(good, blob, keys.PosSeed); err != nil {
-		t.Fatalf("a clean file failed verification: %v", err)
+	if !result.Verified {
+		t.Fatal("engine run did not verify its output")
 	}
 
-	corrupted, err := carrier.Load(good)
+	engineBytes, err := os.ReadFile(engineOut)
 	if err != nil {
-		t.Fatalf("reload: %v", err)
+		t.Fatalf("read engine output: %v", err)
 	}
-	// Flip a channel the salt occupies: it is guaranteed to carry a bit, so the
-	// comparison cannot be fooled by an unused channel.
-	channels := stego.ChannelCount(corrupted.Image)
-	saltChannel := stego.SaltPositions(channels)[0]
-	pixel := int(saltChannel / 3)
-	width := corrupted.Image.Rect.Dx()
-	offset := corrupted.Image.PixOffset(pixel%width, pixel/width)
-	corrupted.Image.Pix[offset+int(saltChannel%3)] ^= 1
-	bad := filepath.Join(t.TempDir(), "bad.png")
-	if err := carrier.Save(bad, corrupted.Image, corrupted.Chunks); err != nil {
-		t.Fatalf("save corrupted: %v", err)
-	}
-
-	err = verifyOutput(bad, blob, keys.PosSeed)
-	if err == nil {
-		t.Fatal("verification accepted a corrupted file")
-	}
-	if codeOf(err) != ExitVerify {
-		t.Fatalf("exit = %d, want %d", codeOf(err), ExitVerify)
+	if !bytes.Equal(cliBytes, engineBytes) {
+		t.Fatalf("CLI and engine outputs differ: %d bytes vs %d", len(cliBytes), len(engineBytes))
 	}
 }

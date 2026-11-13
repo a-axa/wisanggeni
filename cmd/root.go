@@ -11,32 +11,25 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"github.com/a-axa/wisanggeni/internal/exitcode"
 )
 
-// Exit codes are part of the CLI contract (§5, "Perilaku umum").
+// Exit codes are part of the CLI contract (§5, "Perilaku umum"). The numbers
+// live in internal/exitcode so the engine packages behind the CLI and the TUI can
+// tag their own failures; these aliases keep the command layer's names.
 const (
-	ExitOK       = 0
-	ExitError    = 1
-	ExitCapacity = 2
-	ExitDecrypt  = 3
-	ExitVerify   = 4
-	ExitUnfit    = 5
+	ExitOK       = exitcode.OK
+	ExitError    = exitcode.Error
+	ExitCapacity = exitcode.Capacity
+	ExitDecrypt  = exitcode.Decrypt
+	ExitVerify   = exitcode.Verify
+	ExitUnfit    = exitcode.Unfit
 )
 
-// exitError is an error that carries the process exit code with it. Commands
-// return one of these when the failure maps onto a documented exit code.
-type exitError struct {
-	code int
-	err  error
-}
-
-func (e *exitError) Error() string { return e.err.Error() }
-func (e *exitError) Unwrap() error { return e.err }
-func (e *exitError) ExitCode() int { return e.code }
-
-// fail builds an exitError from a format string.
+// fail builds an error that carries a documented exit code.
 func fail(code int, format string, args ...any) error {
-	return &exitError{code: code, err: fmt.Errorf(format, args...)}
+	return exitcode.Fail(code, format, args...)
 }
 
 // Execute runs the command tree and returns the process exit code. Errors are

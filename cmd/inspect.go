@@ -12,6 +12,7 @@ import (
 	"github.com/a-axa/wisanggeni/internal/crypto"
 	"github.com/a-axa/wisanggeni/internal/format"
 	"github.com/a-axa/wisanggeni/internal/prompt"
+	"github.com/a-axa/wisanggeni/internal/reveal"
 	"github.com/a-axa/wisanggeni/internal/stego"
 )
 
@@ -128,16 +129,16 @@ func inspectWarnings(cmd *cobra.Command, result prompt.Result) {
 func printPayload(out io.Writer, img *image.NRGBA, passphrase []byte, headerOnly bool) error {
 	salt, err := stego.ExtractSalt(img, format.SaltSize)
 	if err != nil {
-		return errReveal()
+		return reveal.DecryptError()
 	}
 	keys, err := crypto.Derive(string(passphrase), salt)
 	if err != nil {
 		return err
 	}
 
-	prefix, err := extractAt(img, keys.PosSeed, 0, payloadPrefix)
+	prefix, err := reveal.ExtractAt(img, keys.PosSeed, 0, reveal.PayloadPrefix)
 	if err != nil {
-		return errReveal()
+		return reveal.DecryptError()
 	}
 	headerNonce := prefix[:format.NonceSize]
 	headerCT := prefix[format.NonceSize : format.NonceSize+format.HeaderCipherSize]
@@ -145,14 +146,14 @@ func printPayload(out io.Writer, img *image.NRGBA, passphrase []byte, headerOnly
 
 	header, err := crypto.OpenHeader(keys.EncKey, salt, headerNonce, headerCT)
 	if err != nil {
-		return errReveal()
+		return reveal.DecryptError()
 	}
 
 	// Validate the authenticated body length against the carrier before it is
 	// turned into a slice, then reject a payload this writer cannot read.
 	width, height := img.Rect.Dx(), img.Rect.Dy()
 	if header.BodyLen > uint64(stego.Capacity(width, height)) {
-		return errReveal()
+		return reveal.DecryptError()
 	}
 	if header.Version != format.Version || header.Flags&^format.FlagZstd != 0 {
 		return fail(ExitDecrypt,
@@ -169,13 +170,13 @@ func printPayload(out io.Writer, img *image.NRGBA, passphrase []byte, headerOnly
 		return nil
 	}
 
-	bodyCT, err := extractAt(img, keys.PosSeed, payloadPrefix, int(header.BodyLen)+format.TagSize)
+	bodyCT, err := reveal.ExtractAt(img, keys.PosSeed, reveal.PayloadPrefix, int(header.BodyLen)+format.TagSize)
 	if err != nil {
-		return errReveal()
+		return reveal.DecryptError()
 	}
 	plain, err := crypto.OpenBody(keys.EncKey, headerCT, bodyNonce, bodyCT)
 	if err != nil {
-		return errReveal()
+		return reveal.DecryptError()
 	}
 	defer clear(plain)
 
@@ -183,7 +184,7 @@ func printPayload(out io.Writer, img *image.NRGBA, passphrase []byte, headerOnly
 	// written to disk on the way to printing them.
 	entries, err := archive.List(plain, archive.ListOptions{Compressed: compressed})
 	if err != nil {
-		return unpackError(err)
+		return reveal.UnpackError(err)
 	}
 	printEntries(out, entries, header.BodyLen, compressed)
 	return nil

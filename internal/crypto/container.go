@@ -62,12 +62,31 @@ func Seal(encKey [32]byte, salt []byte, flags uint8, plain []byte) ([]byte, erro
 		return nil, fmt.Errorf("crypto: body nonce: %w", err)
 	}
 
+	return SealWithNonces(encKey, salt, flags, plain, headerNonce[:], bodyNonce[:])
+}
+
+// SealWithNonces is Seal with caller-supplied nonces instead of random ones.
+//
+// It exists for the one thing a random writer cannot do: show that two writers
+// given the same inputs produce the same bytes. The byte-identity check of F2
+// reads both nonces back out of a finished image and re-runs the pipeline with
+// them pinned. Production code keeps using Seal: a nonce reused under the same
+// key breaks XChaCha20-Poly1305 (§11.4), so nothing outside a test should call
+// this.
+func SealWithNonces(encKey [32]byte, salt []byte, flags uint8, plain, headerNonce, bodyNonce []byte) ([]byte, error) {
+	if len(salt) != format.SaltSize {
+		return nil, fmt.Errorf("%w: got %d, want %d", ErrSaltSize, len(salt), format.SaltSize)
+	}
+	if len(headerNonce) != format.NonceSize || len(bodyNonce) != format.NonceSize {
+		return nil, errLayout
+	}
+
 	headerPlain := make([]byte, format.HeaderPlainSize)
 	headerPlain[format.HeaderVersionOffset] = format.Version
 	headerPlain[format.HeaderFlagsOffset] = flags
 	binary.LittleEndian.PutUint64(headerPlain[format.HeaderBodyLenOffset:], uint64(len(plain)))
 
-	return seal(encKey, salt, headerPlain, plain, headerNonce[:], bodyNonce[:])
+	return seal(encKey, salt, headerPlain, plain, headerNonce, bodyNonce)
 }
 
 // seal is the layout engine behind Seal. It takes header_plain and the nonces
