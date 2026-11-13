@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -24,21 +25,35 @@ Nothing is written and no passphrase is needed.`,
 }
 
 func runCapacity(cmd *cobra.Command, args []string) error {
-	// Open rather than Load: a transparent carrier still deserves a report that
-	// says why it cannot be used.
-	car, err := carrier.Open(args[0])
+	car, err := openCarrierForReport(cmd, args[0])
 	if err != nil {
 		return err
+	}
+	printCarrier(cmd.OutOrStdout(), args[0], car)
+	return nil
+}
+
+// openCarrierForReport opens a carrier for the reporting commands, which tolerate
+// alpha so that a transparent carrier still gets a report that says why it cannot
+// be used. Engine warnings go to stderr.
+func openCarrierForReport(cmd *cobra.Command, path string) (*carrier.Carrier, error) {
+	car, err := carrier.Open(path)
+	if err != nil {
+		return nil, err
 	}
 	warn := notifier(cmd, false)
 	for _, msg := range car.Warnings {
 		warn("%s", msg)
 	}
+	return car, nil
+}
 
+// printCarrier writes the carrier layer, the part both capacity and inspect can
+// report without a passphrase (§7.10).
+func printCarrier(out io.Writer, path string, car *carrier.Carrier) {
 	width, height := car.Image.Rect.Dx(), car.Image.Rect.Dy()
-	out := cmd.OutOrStdout()
 
-	_, _ = fmt.Fprintf(out, "file          %s\n", args[0])
+	_, _ = fmt.Fprintf(out, "file          %s\n", path)
 	_, _ = fmt.Fprintf(out, "dimensions    %dx%d\n", width, height)
 	_, _ = fmt.Fprintf(out, "channels      %d\n", stego.Channels(width, height))
 	_, _ = fmt.Fprintf(out, "capacity raw  %d bytes\n", stego.CapacityRaw(width, height))
@@ -57,7 +72,6 @@ func runCapacity(cmd *cobra.Command, args []string) error {
 	}
 
 	_, _ = fmt.Fprintf(out, "chunks        %s\n", chunkList(car.Chunks))
-	return nil
 }
 
 // chunkList names the carrier's preserved chunks in file order.

@@ -53,6 +53,10 @@ type Options struct {
 	// interactive mode honours it, which is where hide needs it.
 	Confirm bool
 
+	// Label is what the interactive prompt prints. Empty means "Passphrase: ".
+	// Commands that accept an empty answer, such as inspect, say so here.
+	Label string
+
 	// In supplies --passphrase-stdin. Nil means os.Stdin.
 	In io.Reader
 
@@ -83,6 +87,22 @@ func Read(opts Options) (Result, error) {
 	default:
 		return readTerminal(opts)
 	}
+}
+
+// Look reports whether a passphrase can be had without naming a source: a file,
+// a stdin line, or — when stdin is a terminal — an interactive prompt. It never
+// prompts and never blocks.
+//
+// Look is deliberately narrower than Read. Read falls back to the controlling
+// terminal so that hide and reveal can still prompt with a piped stdin, but a
+// command that merely *offers* the payload layer must not block just because a
+// terminal exists somewhere: for inspect, redirecting stdin is then an
+// unambiguous "no prompt, please" (§7.10).
+func Look(opts Options) bool {
+	if opts.File != "" || opts.FromStdin || opts.Term != nil {
+		return true
+	}
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 // readFile reads the whole file and drops a single trailing newline. Any other
@@ -120,7 +140,7 @@ func readTerminal(opts Options) (Result, error) {
 	}
 	defer closeFn()
 
-	first, err := term.ReadPassword("Passphrase: ")
+	first, err := term.ReadPassword(labelOr(opts.Label))
 	if err != nil {
 		return Result{}, fmt.Errorf("prompt: read passphrase: %w", err)
 	}
@@ -149,6 +169,14 @@ func finish(pass []byte, warnings []string) (Result, error) {
 			"passphrase is shorter than %d characters", MinLength))
 	}
 	return Result{Passphrase: pass, Warnings: warnings}, nil
+}
+
+// labelOr returns the caller's prompt label, or the default one.
+func labelOr(label string) string {
+	if label == "" {
+		return "Passphrase: "
+	}
+	return label
 }
 
 // stripOneNewline removes exactly one trailing "\n" or "\r\n", nothing else.
