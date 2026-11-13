@@ -50,7 +50,9 @@ jobs:
           version: v2.15.0
 
   # The G3 detector is Python and never ships inside the Go binary, so it gets
-  # its own job. It stays a no-op until detector/*.py exists.
+  # its own job. It stays a no-op until detector/*.py exists. The stc_ref.py
+  # reference solver is stdlib-only and doubles as the independent oracle for
+  # the Go STC vectors, so its --check runs here.
   detector:
     name: detector (G3)
     runs-on: ubuntu-latest
@@ -74,3 +76,6 @@ jobs:
         run: |
           python -m pip install --upgrade numpy scikit-learn
           python -m compileall -q detector
+      - name: check stc reference vectors
+        if: hashFiles('detector/stc_ref.py') != ''
+        run: python detector/stc_ref.py --check internal/stego/testdata/stc_vectors.json
