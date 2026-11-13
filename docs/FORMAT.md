@@ -214,10 +214,32 @@ The left half is flat (expensive to embed), the right half is textured (cheap).
 - `textured_fraction` = number of channels with `S > 16`, divided by `T`.
 - `median_rho` = median `rho` across all channels.
 - Classification: `≥ 0.20` suitable; `0.05 ≤ x < 0.20` warning; `< 0.05` reject
-  (exit 5) unless `--force`.
+  (exit 5) unless `--force`. The bounds are closed on the lower edge.
+
+The score reuses the cost-map engine in a single pass: `CoverScore` counts the
+channels with `S > 16` while it builds `rho`, then selects the median in place
+with a three-way quickselect, so a large carrier is not copied and no second
+buffer is allocated. A nil or empty carrier scores `reject` with zero fractions.
+The verdict labels are `suitable`, `warning`, `reject` (all lowercase).
 
 Constants: `stego.TexturedSThreshold = 16`, `TexturedFractionGood = 0.20`,
 `TexturedFractionWarn = 0.05`.
+Vector: `TestCoverScoreVectorPattern` (the §8.1 8×8 pattern).
+
+### 9.1 Verified values
+
+| Carrier | textured_fraction | median_rho | verdict |
+|---|---|---|---|
+| §8.1 8×8 pattern | 1 | `0.0042531553983439184` | suitable |
+| flat 16×16, value 128 | 0 | `0.1` | reject |
+
+On an 8×8 tile the 5×5 smoothing spreads the boundary residual over the flat
+half, so every channel counts as textured; on a full-size carrier the flat half
+would stay below the threshold.
+
+Vector: `TestCoverScoreVectorPattern`, `TestCoverScoreFlatIsUnsuitable`,
+`TestCoverScoreNoiseIsSuitable`, `TestCoverScoreEmptyIsUnsuitable`,
+`TestClassifyCoverBoundaries`.
 
 ## 10. STC (syndrome-trellis code)
 

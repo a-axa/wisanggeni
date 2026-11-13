@@ -18,8 +18,17 @@ import (
 // index to 0. Every window position therefore refers to a real pixel, and the
 // box means divide by the full window (9 and 25).
 func CostMap(img *image.NRGBA) []float64 {
+	costs, _ := costMap(img)
+	return costs
+}
+
+// costMap is the shared engine behind CostMap and CoverScore. Besides the cost
+// map it returns the number of channels whose smoothed residual S exceeds
+// TexturedSThreshold, which cover scoring needs and which would otherwise force
+// a second pass over the carrier (§7.5).
+func costMap(img *image.NRGBA) ([]float64, int) {
 	if img == nil {
-		return nil
+		return nil, 0
 	}
 
 	b := img.Bounds()
@@ -27,8 +36,11 @@ func CostMap(img *image.NRGBA) []float64 {
 	n := w * h
 	costs := make([]float64, n*3)
 	if n == 0 {
-		return costs
+		return costs, 0
 	}
+
+	// textured counts channels with S > TexturedSThreshold across all planes.
+	textured := 0
 
 	plane := make([]float64, n)
 	residual := make([]float64, n)
@@ -64,10 +76,13 @@ func CostMap(img *image.NRGBA) []float64 {
 				rho *= CostEdgeMultiplier
 			}
 			costs[i*3+c] = rho
+			if smoothed[i] > TexturedSThreshold {
+				textured++
+			}
 		}
 	}
 
-	return costs
+	return costs, textured
 }
 
 func nrgbaComponent(img *image.NRGBA, x, y, c int) uint8 {
