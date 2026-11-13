@@ -1,0 +1,33 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - gocritic
+    - misspell
+    - prealloc
+    - revive
+    - unconvert
+    - unparam
+    - whitespace
+  exclusions:
+    generated: lax
+    rules:
+      - path: _test\.go
+        linters:
+          - prealloc
+          - unparam
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/a-axa/wisanggeni

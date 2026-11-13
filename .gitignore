@@ -1,0 +1,5 @@
+.agents/
+
+# build output
+bin/
+dist/
