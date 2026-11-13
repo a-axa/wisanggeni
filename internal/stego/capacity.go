@@ -12,9 +12,18 @@ func Channels(w, h int) int64 {
 	return int64(w) * int64(h) * 3
 }
 
-// CapacityRaw returns floor(T/8): the largest blob the carrier can hold (§6.1).
+// CapacityRaw returns the largest blob the carrier can hold, in bytes (§6.1).
+//
+// The STC pool is T minus the 128 salt channels, and with rate h/w = 1/2 one
+// message byte needs STCWidth pool channels, so the raw capacity is
+// floor((T - 128) / STCWidth) bytes.
 func CapacityRaw(w, h int) int64 {
-	return Channels(w, h) / format.BitsPerByte
+	pool := Channels(w, h) - SaltChannels
+	if pool <= 0 {
+		return 0
+	}
+	blocks := pool / STCWidth
+	return blocks * STCHeight / format.BitsPerByte
 }
 
 // Capacity returns the largest body_plain, i.e. the raw capacity minus the

@@ -14,9 +14,9 @@ func TestCapacityTable(t *testing.T) {
 		w, h                           int
 		raw, usable, suggested, strong int64
 	}{
-		{1920, 1080, 777600, 777488, 77648, 38768},
-		{1080, 1350, 546750, 546638, 54563, 27225},
-		{3840, 2160, 3110400, 3110288, 310928, 155408},
+		{1920, 1080, 388792, 388680, 77648, 38768},
+		{1080, 1350, 273367, 273255, 54563, 27225},
+		{3840, 2160, 1555192, 1555080, 310928, 155408},
 		{1, 1, 0, 0, 0, 0},
 	}
 
@@ -54,9 +54,10 @@ func TestFillRatio(t *testing.T) {
 	const w, h = 1920, 1080
 	channels := stego.Channels(w, h)
 
-	// A blob that fills every channel bit.
-	if got := stego.FillRatio(stego.CapacityRaw(w, h), w, h); got != 1 {
-		t.Errorf("full fill = %v, want 1", got)
+	// With rate 1/2, a blob at raw capacity uses half the channels, minus the
+	// 128 salt channels that are not part of the pool.
+	if got := stego.FillRatio(stego.CapacityRaw(w, h), w, h); got <= 0.4999 || got > 0.5 {
+		t.Errorf("full fill = %v, want just under 0.5", got)
 	}
 
 	// Filling the suggested capacity lands exactly on 10%. The suggested number

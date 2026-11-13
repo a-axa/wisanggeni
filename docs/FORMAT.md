@@ -4,10 +4,9 @@ This document is the contract between writer and reader. Every number here has
 a named constant in `internal/format` or `internal/stego`, and every item has a
 test vector that CI runs. There are no magic numbers outside those constants.
 
-**Status: FROZEN except §10 (STC).** After the `v1.0.0` tag, changing any item
-here means format v2. The blob has no plaintext header, so a reader has no way
-to "guess" the version: a shifted constant makes every existing file
-undecryptable.
+**Status: FROZEN.** After the `v1.0.0` tag, changing any item here means format
+v2. The blob has no plaintext header, so a reader has no way to "guess" the
+version: a shifted constant makes every existing file undecryptable.
 
 Notation: `T = W × H × 3` (the number of image channels).
 
@@ -121,7 +120,8 @@ Vector: `internal/format/hkdf_test.go`, `internal/format/nfkc_test.go`.
 - `S` and `P` are guaranteed disjoint. The salt is written into `S` with LSB
   matching.
 - The payload (the blob after the salt: 80-byte prefix + body) is written with
-  STC over `P'`.
+  STC over `P'`. At the frozen code rate of 1/2, each payload byte occupies 16
+  consecutive `P'` channels (§10).
 
 Constants: `stego.SaltChannels = 128`, `format.LabelSaltPos`.
 Vector: `TestSaltPositionsGolden`.
@@ -138,11 +138,15 @@ Vector: `TestSaltPositionsGolden`.
 
 | function | formula | meaning |
 |---|---|---|
-| `CapacityRaw(w,h)` | `floor(T/8)` | maximum blob size |
-| `Capacity(w,h)` | `max(0, floor(T/8) − 112)` | maximum `body_plain` size |
+| `CapacityRaw(w,h)` | `floor((T − 128) / 16)` | maximum blob size |
+| `Capacity(w,h)` | `max(0, CapacityRaw − 112)` | maximum `body_plain` size |
 | `SuggestedCapacity(w,h)` | `max(0, floor(T/80) − 112)` | `body_plain` at 10% fill |
 | `StrongCapacity(w,h)` | `max(0, floor(T/160) − 112)` | `body_plain` at 5% fill |
 | `FillRatio(blob)` | `8 × blob / T` | computed from the blob, not `body_plain` |
+
+The `CapacityRaw` formula follows from the STC code rate of 1/2 (§10): the pool
+is `T − 128` channels, and one payload byte needs 16 pool channels, so a blob at
+raw capacity consumes just under half of `T` (`FillRatio(CapacityRaw) ≈ 0.49999`).
 
 Fill policy (§5): warning at `> 0.05`, `--force` required at `> 0.10`, reject
 at `> 0.50`. `Pack` uses `Capacity()` directly as `maxBytes`.
@@ -155,9 +159,9 @@ Vector: `internal/stego/capacity_test.go` → `TestCapacityTable`,
 
 | Carrier | T | CapacityRaw | Capacity | Suggested (10%) | Strong (5%) |
 |---|---|---|---|---|---|
-| 1920×1080 | 6220800 | 777600 | 777488 | 77648 | 38768 |
-| 1080×1350 | 4374000 | 546750 | 546638 | 54563 | 27225 |
-| 3840×2160 | 24883200 | 3110400 | 3110288 | 310928 | 155408 |
+| 1920×1080 | 6220800 | 388792 | 388680 | 77648 | 38768 |
+| 1080×1350 | 4374000 | 273367 | 273255 | 54563 | 27225 |
+| 3840×2160 | 24883200 | 1555192 | 1555080 | 310928 | 155408 |
 | 1×1 | 3 | 0 | 0 | 0 | 0 |
 
 ## 8. Cost map (§7.3)
@@ -215,36 +219,82 @@ The left half is flat (expensive to embed), the right half is textured (cheap).
 Constants: `stego.TexturedSThreshold = 16`, `TexturedFractionGood = 0.20`,
 `TexturedFractionWarn = 0.05`.
 
-## 10. STC — NOT FROZEN YET
+## 10. STC (syndrome-trellis code)
 
-What is already settled:
+Status: **FROZEN**.
 
-- Binary, `h = 8` (256 Viterbi states), 65536-channel blocks, the last block
-  may be shorter. `stego.STCHeight`, `stego.STCBlockChannels`.
-- Public parity-check matrix from seed `SHA-256("wisanggeni/v1/stc")`
-  (`format.LabelSTC`), identical for every block.
-- The encoder minimises `sum rho_i * |y_i − x_i|` with `|y_i − x_i| ∈ {0,1}`
-  (±1 direction from LSB matching, §7.6). Failure is an error, not a fallback
-  to random LSB.
-- The decoder computes the syndrome `H * LSB(y)` over the `P'` order, stateful
-  across the `reveal` steps (prefix then body).
-- The bit split per block is a pure function of `(m, B)` and is tested.
+### 10.1 Parameters
 
-**Still undecided: the code rate.** This blocks the STC vector and task B4.
+- Binary code, `h = STCHeight = 8` parity rows (256 syndromes), `w = STCWidth =
+  16` columns per block → **code rate 1/2 bit per channel**. One payload byte
+  (8 message bits) occupies 16 pool channels.
+- Blocks buffer `STCBlockChannels = 65536` pool channels when walking `P'`; the
+  code itself is block-local at `STCWidth` and the last block may be shorter.
+- Why rate 1/2: at rate 1 (`w = h`) `Ĥ` is square, so `Ĥ·e = s` has a unique
+  solution and there is no optimisation room at all — the encoder could never
+  beat uniform LSB matching. `w = 2h` is the smallest width that gives real
+  freedom (256 candidates per block) while keeping the capacity formula simple.
+  The cost is that capacity is halved relative to rate 1: see §7.
 
-- A rate of 1 bit/channel (`w = h`) is the only value consistent with the
-  capacity table in §6.1 and DoD B6 (round-trip up to 90% of capacity). But at
-  rate 1 the matrix is square, so `H·e = s` has a **unique solution** and
-  Viterbi has no room to optimise at all. DoD B4 ("STC total distortion smaller
-  than uniform LSB matching") can never be met.
-- A rate of `h/w < 1` (submatrix `Ĥ` of size `h × w`, `w > h`) gives real
-  optimisation room, but the maximum capacity drops to `T × h/w / 8` bytes.
-  For `w = 2h`, `Capacity` becomes `floor(T/16) − 112`, and the §6.1 table,
-  `SuggestedCapacity`, `StrongCapacity`, and DoD B6 all have to change.
+### 10.2 Parity-check matrix
 
-This decision must be made before B4. Once made, this section becomes frozen,
-the Python reference (`detector/stc_ref.py`) is written, and its vectors are
-stored in `testdata/`.
+Public and identical for every block. Derived from `ChaCha8` seeded with
+`SHA-256("wisanggeni/v1/stc")` (`format.LabelSTC`); column `i` is byte `i` of the
+raw `Uint64()` stream. Frozen columns:
+
+```
+0x84 0x3F 0x8F 0x45 0x97 0x5E 0x3E 0x0E 0x0E 0x20 0x00 0xA7 0x4E 0x7E 0x25 0x0A
+```
+
+Vector: `TestParityMatrixGolden`. The same 16 bytes are stored in
+`internal/stego/testdata/stc_vectors.json` (`columns`) and in
+`detector/stc_ref.py` (`PARITY_COLUMNS`); `TestSTCVectors` and
+`stc_ref.py --check` fail on any drift.
+
+### 10.3 Embedding
+
+For each block `b` covering 16 pool channels, with `cover` the block's 16 LSBs as
+a 16-bit mask:
+
+1. `target = data[b] XOR syndrome(cover)`.
+2. Solve `Ĥ·m = target` for the cheapest flip mask `m` (see 10.4).
+3. For every bit set in `m`, move the channel by ±1 with LSB matching (§7.6),
+   so `|y_i − x_i| ∈ {0,1}` and the stego LSB is `cover_i XOR m_i`.
+4. The decoder's view is `Ĥ·LSB(stego) = data[b]` by construction.
+
+The objective is `sum rho_i` over the flipped columns. Failure (syndrome
+mismatch) returns `ErrSTC`; it is never a fallback to random LSB.
+
+### 10.4 Solver (frozen ordering)
+
+Columns are scanned left to right. A column outside the span of the columns
+already chosen is added to the basis and its span recorded in `solve[s]` (one
+basis combination per reachable syndrome). A dependent column becomes a kernel
+generator: column `c` XOR the basis combination that reproduces it. Every
+solution of `Ĥ·m = target` is then `solve[target] XOR any subset of the 8 kernel
+generators`; all **256** candidates are enumerated and the cheapest kept. This
+is a global optimum per block.
+
+Tie-break `maskLess`: among equal costs, the mask that leaves the **earliest**
+column untouched wins (lexicographic order of per-column decisions, earliest
+first). The Go solver and `decisions()` in `stc_ref.py` implement the same rule.
+
+### 10.5 Extraction
+
+The decoder computes the syndrome `Ĥ·LSB(y)` per block over the `P'` order. It
+needs neither the cost map nor the cover, and the state is carried across the
+`reveal` steps (prefix, then body). The bit split per block is a pure function
+of `(m, B)` and is tested.
+
+### 10.6 Vectors
+
+`internal/stego/testdata/stc_vectors.json` holds 8 cases produced independently
+by `detector/stc_ref.py`, which brute-forces all 2¹⁶ masks from the definition
+rather than reusing the basis construction. In Go:
+`TestSTCVectors` (golden), `TestSTCSolveMaskBruteForce` (exhaustive scan over
+all masks), `TestSTCRoundTrip` / `TestSTCRoundTripManySizes`,
+`TestSTCBeatsUniformLSBMatching`, `TestSTCChangesStayWithinOneAndFlipLSB`,
+`TestSTCEdgeValues`.
 
 ## 11. PNG chunks (§7.7)
 

@@ -11,10 +11,15 @@ const (
 	SaltChannels = 128
 
 	// STCHeight is the number of parity-check rows per trellis section, giving
-	// 2^8 Viterbi states (§7.4).
+	// 2^8 Viterbi states (§10).
 	STCHeight = 8
 
-	// STCBlockChannels is the Viterbi block size; the last block may be shorter.
+	// STCWidth is the number of columns per parity-check submatrix. Together
+	// with STCHeight it sets the code rate h/w = 1/2 bit per channel (§10).
+	STCWidth = 16
+
+	// STCBlockChannels is how many pool channels are buffered at a time when
+	// hide/reveal walk P'; the code itself is block-local at STCWidth (§10).
 	STCBlockChannels = 65536
 
 	// DenseDivisor is the n/10 threshold that selects the dense shuffle variant
