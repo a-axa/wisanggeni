@@ -31,6 +31,7 @@ where a mistake costs a life. Details in [Threat model](#threat-model).
 - [Passphrase modes](#passphrase-modes)
 - [Threat model](#threat-model)
 - [Measured properties](#measured-properties)
+- [Security testing](#security-testing)
 - [Exit codes](#exit-codes)
 - [How it works](#how-it-works)
 - [Building and testing](#building-and-testing)
@@ -319,6 +320,21 @@ These two classic blind attacks are what the detector job checks. The PRD is
 explicit that a detector trained on Wisanggeni output would do better, and that
 figure is not measured here. Read the table as evidence that two standard
 attacks see nothing, not as evidence that nothing can see the payload.
+
+## Security testing
+
+On 13 November 2026 the owner asked Muse, an AI agent, to try to recover
+the contents of a real Wisanggeni output without the passphrase. The agent
+built the tool from this repo, confirmed the payload was present from the
+salt positions and the pattern of changed pixels, then tried 108 likely
+passphrases plus 700 of an expanded 2148-entry dictionary, generic forensic
+tools, the repo's own chi-square and RS detector, and a code audit. None of
+it recovered the contents. With the passphrase supplied by the owner,
+`reveal` then succeeded on the first try and returned one 11-byte text
+file. Full report: [docs/test-report-2026-11-13.md](docs/test-report-2026-11-13.md).
+
+This was a test, not an audit. It covers one sample, one carrier, and a
+small payload, and it says nothing about a weak passphrase.
 
 ## Exit codes
 
