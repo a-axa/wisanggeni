@@ -341,3 +341,31 @@ Vector: `TestPNGChunkPolicy`.
   **before** decoding, so a decompression bomb allocates nothing.
 - `T ≤ format.MaxChannelIndex = 2³²−1`, a consequence of `uint32` positions.
 - Carriers with alpha `< 255` are rejected (v1.1 backlog).
+
+## 13. Archive layer (`body_plain`)
+
+§3 defines `body_plain` only as opaque bytes. This section records what the
+writer puts there; it defines no binary constants of its own and changes none of
+the frozen values above.
+
+`body_plain` is a tar stream, optionally zstd-compressed. `header_plain.flags`
+bit 0 (`format.FlagZstd`) says whether it is compressed; no other framing byte is
+added, so the decoder hands `body_ct`'s plaintext straight to zstd when the flag
+is set and to the tar reader otherwise.
+
+Deterministic output is required, because two runs over the same inputs must
+produce byte-identical carriers:
+
+- Entry names are the input basename plus, for directories, the path relative to
+  it, slash separated and never absolute.
+- Entries are sorted by name bytes.
+- Metadata is stripped: `uid`/`gid` are 0, `uname`/`gname` are empty, `mtime`,
+  `atime` and `ctime` are zeroed, and `mode` keeps only the permission bits.
+- Names are not Unicode-normalised; NFD names from macOS stay NFD.
+- zstd runs with encoder concurrency 1. The default follows the CPU count, which
+  would make identical inputs compress to different bytes on different machines.
+
+Compression is applied only when it makes the payload strictly smaller; the
+`zstd` output is compared against the raw tar and the smaller one wins, with the
+flag set accordingly. `Pack` caps the result at the caller's byte budget
+(`Capacity(w,h)`), so an oversized payload fails rather than being truncated.
