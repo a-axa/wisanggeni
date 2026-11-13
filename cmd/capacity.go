@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/a-axa/wisanggeni/internal/carrier"
-	"github.com/a-axa/wisanggeni/internal/stego"
+	"github.com/a-axa/wisanggeni/internal/inspect"
 )
 
 func newCapacityCmd() *cobra.Command {
@@ -51,37 +51,34 @@ func openCarrierForReport(cmd *cobra.Command, path string) (*carrier.Carrier, er
 // printCarrier writes the carrier layer, the part both capacity and inspect can
 // report without a passphrase (§7.10).
 func printCarrier(out io.Writer, path string, car *carrier.Carrier) {
-	width, height := car.Image.Rect.Dx(), car.Image.Rect.Dy()
+	// Capacity reports a carrier that cannot be used without pretending to score
+	// it, so the cover pass is skipped for a transparent image.
+	info := inspect.Describe(car, !car.Alpha)
 
 	_, _ = fmt.Fprintf(out, "file          %s\n", path)
-	_, _ = fmt.Fprintf(out, "dimensions    %dx%d\n", width, height)
-	_, _ = fmt.Fprintf(out, "channels      %d\n", stego.Channels(width, height))
-	_, _ = fmt.Fprintf(out, "capacity raw  %d bytes\n", stego.CapacityRaw(width, height))
-	_, _ = fmt.Fprintf(out, "usable        %d bytes\n", stego.Capacity(width, height))
-	_, _ = fmt.Fprintf(out, "suggested     %d bytes (10%% fill)\n", stego.SuggestedCapacity(width, height))
-	_, _ = fmt.Fprintf(out, "strong        %d bytes (5%% fill)\n", stego.StrongCapacity(width, height))
+	_, _ = fmt.Fprintf(out, "dimensions    %dx%d\n", info.Width, info.Height)
+	_, _ = fmt.Fprintf(out, "channels      %d\n", info.Channels)
+	_, _ = fmt.Fprintf(out, "capacity raw  %d bytes\n", info.Raw)
+	_, _ = fmt.Fprintf(out, "usable        %d bytes\n", info.Usable)
+	_, _ = fmt.Fprintf(out, "suggested     %d bytes (10%% fill)\n", info.Suggested)
+	_, _ = fmt.Fprintf(out, "strong        %d bytes (5%% fill)\n", info.Strong)
 
-	if car.Alpha {
+	if info.Alpha {
 		_, _ = fmt.Fprintf(out, "cover         not scored\n")
 		_, _ = fmt.Fprintf(out, "alpha         yes; transparent carriers are not supported, so nothing can be hidden\n")
 	} else {
-		stats := stego.CoverScore(car.Image)
 		_, _ = fmt.Fprintf(out, "cover         %s (textured_fraction %.3f, median_rho %.6g)\n",
-			stats.Verdict, stats.TexturedFraction, stats.MedianRho)
+			info.Score.Verdict, info.Score.TexturedFraction, info.Score.MedianRho)
 		_, _ = fmt.Fprintf(out, "alpha         no\n")
 	}
 
-	_, _ = fmt.Fprintf(out, "chunks        %s\n", chunkList(car.Chunks))
+	_, _ = fmt.Fprintf(out, "chunks        %s\n", chunkList(info.Chunks))
 }
 
 // chunkList names the carrier's preserved chunks in file order.
-func chunkList(chunks []carrier.Chunk) string {
+func chunkList(chunks []string) string {
 	if len(chunks) == 0 {
 		return "none"
 	}
-	types := make([]string, len(chunks))
-	for i, c := range chunks {
-		types[i] = c.Type
-	}
-	return strings.Join(types, ", ")
+	return strings.Join(chunks, ", ")
 }

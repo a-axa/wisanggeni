@@ -13,6 +13,7 @@ import (
 	"github.com/a-axa/wisanggeni/internal/archive"
 	"github.com/a-axa/wisanggeni/internal/carrier"
 	"github.com/a-axa/wisanggeni/internal/format"
+	"github.com/a-axa/wisanggeni/internal/inspect"
 	"github.com/a-axa/wisanggeni/internal/prompt"
 	"github.com/a-axa/wisanggeni/internal/stego"
 )
@@ -324,6 +325,79 @@ func TestInspectShortPassphraseWarns(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "shorter than") {
 		t.Errorf("stderr = %q, want a length warning", stderr)
+	}
+}
+
+// TestInspectCLIMatchesEngine pins the CLI to the shared report. Every line it
+// prints must be the value inspect.Describe or inspect.OpenPayload returned,
+// which is the same report the TUI draws, so the two surfaces cannot drift.
+func TestInspectCLIMatchesEngine(t *testing.T) {
+	noPrompt(t)
+	pass := "correct horse battery staple"
+	carrierPath := saveImage(t, noiseImage(256, 256))
+	packed := packDir(t, filepath.Join(t.TempDir(), "engine"), map[string][]byte{
+		"a.txt":        []byte("alpha"),
+		"nested/b.txt": []byte("beta gamma"),
+	})
+	stegoPath := inspectStego(t, carrierPath, pass, packed)
+
+	car, err := carrier.Open(stegoPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	info := inspect.Describe(car, true)
+	payload, err := inspect.OpenPayload(car.Image, []byte(pass), false)
+	if err != nil {
+		t.Fatalf("OpenPayload: %v", err)
+	}
+
+	carrierLines := []string{
+		fmt.Sprintf("dimensions    %dx%d", info.Width, info.Height),
+		fmt.Sprintf("channels      %d", info.Channels),
+		fmt.Sprintf("capacity raw  %d bytes", info.Raw),
+		fmt.Sprintf("usable        %d bytes", info.Usable),
+		fmt.Sprintf("suggested     %d bytes (10%% fill)", info.Suggested),
+		fmt.Sprintf("strong        %d bytes (5%% fill)", info.Strong),
+		fmt.Sprintf("cover         %s (textured_fraction %.3f, median_rho %.6g)",
+			info.Score.Verdict, info.Score.TexturedFraction, info.Score.MedianRho),
+		"alpha         no",
+		fmt.Sprintf("chunks        %s", chunkList(info.Chunks)),
+	}
+	payloadLines := []string{
+		"payload       decrypted",
+		fmt.Sprintf("version       %d", payload.Version),
+		fmt.Sprintf("flags         %s", compressionName(payload.Compressed)),
+		fmt.Sprintf("body          %d bytes", payload.BodyLen),
+		fmt.Sprintf("entries       %d (%d files)", len(payload.Entries), payload.Files),
+		fmt.Sprintf("total         %d bytes uncompressed", payload.Total),
+	}
+	for _, e := range payload.Entries {
+		if e.Dir {
+			payloadLines = append(payloadLines, fmt.Sprintf("  %s (directory)", e.Name))
+			continue
+		}
+		payloadLines = append(payloadLines, fmt.Sprintf("  %s  %d bytes", e.Name, e.Size))
+	}
+
+	stdout, stderr, err := runInspectCLI(t, stegoPath, "--passphrase-file", passFile(t, pass))
+	if err != nil {
+		t.Fatalf("inspect: %v (stderr %s)", err, stderr)
+	}
+	for _, want := range append(carrierLines, payloadLines...) {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("inspect output lacks the engine value %q:\n%s", want, stdout)
+		}
+	}
+
+	// capacity prints the same carrier layer from the same function.
+	capacityOut, capacityErr, err := runCapacityCLI(t, stegoPath)
+	if err != nil {
+		t.Fatalf("capacity: %v (stderr %s)", err, capacityErr)
+	}
+	for _, want := range carrierLines {
+		if !strings.Contains(capacityOut, want) {
+			t.Errorf("capacity output lacks the engine value %q:\n%s", want, capacityOut)
+		}
 	}
 }
 

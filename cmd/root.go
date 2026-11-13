@@ -27,9 +27,11 @@ const (
 	ExitUnfit    = exitcode.Unfit
 )
 
-// fail builds an error that carries a documented exit code.
-func fail(code int, format string, args ...any) error {
-	return exitcode.Fail(code, format, args...)
+// fail builds the exit-1 error the command layer raises for a usage or input
+// failure. Failures with a more specific code come from the engine packages,
+// which tag them with exitcode.Fail.
+func fail(format string, args ...any) error {
+	return exitcode.Fail(ExitError, format, args...)
 }
 
 // Execute runs the command tree and returns the process exit code. Errors are

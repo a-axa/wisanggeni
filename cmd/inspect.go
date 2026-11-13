@@ -8,12 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/a-axa/wisanggeni/internal/archive"
-	"github.com/a-axa/wisanggeni/internal/crypto"
-	"github.com/a-axa/wisanggeni/internal/format"
+	"github.com/a-axa/wisanggeni/internal/inspect"
 	"github.com/a-axa/wisanggeni/internal/prompt"
-	"github.com/a-axa/wisanggeni/internal/reveal"
-	"github.com/a-axa/wisanggeni/internal/stego"
 )
 
 // inspectPromptLabel tells the user that an empty answer is a valid choice here,
@@ -73,7 +69,7 @@ func runInspect(cmd *cobra.Command, args []string) error {
 	}
 	if passphrase == nil {
 		if headerOnly {
-			return fail(ExitError, "--header-only needs a passphrase")
+			return fail("--header-only needs a passphrase")
 		}
 		return nil
 	}
@@ -123,100 +119,43 @@ func inspectWarnings(cmd *cobra.Command, result prompt.Result) {
 }
 
 // printPayload runs the decrypt path of §7.9 against an already decoded carrier,
-// minus the extraction to disk, and reports what the blob holds. Every failure
-// before the archive parse collapses into the same opaque error as reveal, so
-// inspect cannot be used as an oracle.
+// minus the extraction to disk, and reports what the blob holds. The engine call
+// is inspect.OpenPayload, the same one the TUI makes.
 func printPayload(out io.Writer, img *image.NRGBA, passphrase []byte, headerOnly bool) error {
-	salt, err := stego.ExtractSalt(img, format.SaltSize)
-	if err != nil {
-		return reveal.DecryptError()
-	}
-	keys, err := crypto.Derive(string(passphrase), salt)
+	payload, err := inspect.OpenPayload(img, passphrase, headerOnly)
 	if err != nil {
 		return err
 	}
 
-	prefix, err := reveal.ExtractAt(img, keys.PosSeed, 0, reveal.PayloadPrefix)
-	if err != nil {
-		return reveal.DecryptError()
-	}
-	headerNonce := prefix[:format.NonceSize]
-	headerCT := prefix[format.NonceSize : format.NonceSize+format.HeaderCipherSize]
-	bodyNonce := prefix[format.NonceSize+format.HeaderCipherSize:]
-
-	header, err := crypto.OpenHeader(keys.EncKey, salt, headerNonce, headerCT)
-	if err != nil {
-		return reveal.DecryptError()
-	}
-
-	// Validate the authenticated body length against the carrier before it is
-	// turned into a slice, then reject a payload this writer cannot read.
-	width, height := img.Rect.Dx(), img.Rect.Dy()
-	if header.BodyLen > uint64(stego.Capacity(width, height)) {
-		return reveal.DecryptError()
-	}
-	if header.Version != format.Version || header.Flags&^format.FlagZstd != 0 {
-		return fail(ExitDecrypt,
-			"payload was written by an incompatible writer (v%d, flags %#02x)",
-			header.Version, header.Flags)
-	}
-	compressed := header.Flags&format.FlagZstd != 0
-
 	_, _ = fmt.Fprintf(out, "payload       %s\n", payloadState(headerOnly))
-	_, _ = fmt.Fprintf(out, "version       %d\n", header.Version)
-	_, _ = fmt.Fprintf(out, "flags         %s\n", compressionName(compressed))
-	_, _ = fmt.Fprintf(out, "body          %d bytes\n", header.BodyLen)
+	_, _ = fmt.Fprintf(out, "version       %d\n", payload.Version)
+	_, _ = fmt.Fprintf(out, "flags         %s\n", compressionName(payload.Compressed))
+	_, _ = fmt.Fprintf(out, "body          %d bytes\n", payload.BodyLen)
 	if headerOnly {
 		return nil
 	}
 
-	bodyCT, err := reveal.ExtractAt(img, keys.PosSeed, reveal.PayloadPrefix, int(header.BodyLen)+format.TagSize)
-	if err != nil {
-		return reveal.DecryptError()
-	}
-	plain, err := crypto.OpenBody(keys.EncKey, headerCT, bodyNonce, bodyCT)
-	if err != nil {
-		return reveal.DecryptError()
-	}
-	defer clear(plain)
-
-	// List rather than Unpack: the names are the point, and nothing may be
-	// written to disk on the way to printing them.
-	entries, err := archive.List(plain, archive.ListOptions{Compressed: compressed})
-	if err != nil {
-		return reveal.UnpackError(err)
-	}
-	printEntries(out, entries, header.BodyLen, compressed)
+	printEntries(out, payload)
 	return nil
 }
 
 // printEntries lists the archive members and the sizes they add up to.
-func printEntries(out io.Writer, entries []archive.Entry, bodyLen uint64, compressed bool) {
-	var (
-		total int64
-		files int
-	)
-	for _, e := range entries {
-		if !e.Dir {
-			files++
-			total += e.Size
-		}
-	}
-	_, _ = fmt.Fprintf(out, "entries       %d (%d files)\n", len(entries), files)
-	for _, e := range entries {
+func printEntries(out io.Writer, payload *inspect.Payload) {
+	_, _ = fmt.Fprintf(out, "entries       %d (%d files)\n", len(payload.Entries), payload.Files)
+	for _, e := range payload.Entries {
 		if e.Dir {
 			_, _ = fmt.Fprintf(out, "  %s (directory)\n", e.Name)
 			continue
 		}
 		_, _ = fmt.Fprintf(out, "  %s  %d bytes\n", e.Name, e.Size)
 	}
-	_, _ = fmt.Fprintf(out, "total         %d bytes uncompressed\n", total)
+	_, _ = fmt.Fprintf(out, "total         %d bytes uncompressed\n", payload.Total)
 
 	// The ratio only means something when the body really is compressed: without
 	// zstd the body is the tar stream, whose padding and headers are not content.
-	if compressed && bodyLen > 0 {
+	if payload.Compressed && payload.BodyLen > 0 {
 		_, _ = fmt.Fprintf(out, "ratio         %.2fx (content : body)\n",
-			float64(total)/float64(bodyLen))
+			float64(payload.Total)/float64(payload.BodyLen))
 	}
 }
 

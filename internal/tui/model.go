@@ -64,8 +64,10 @@ type Model struct {
 	previous screen
 	quitting bool
 
-	hide   hideWiz
-	reveal revealWiz
+	hide      hideWiz
+	reveal    revealWiz
+	report    reportWiz
+	inspector inspectorWiz
 
 	// gen tags every asynchronous job. A message whose tag no longer matches is
 	// stale — the user went back, or started another job — and is dropped.
@@ -80,11 +82,13 @@ type Model struct {
 // is valid even before Bubble Tea delivers a WindowSizeMsg.
 func New(version string) Model {
 	return Model{
-		version: version,
-		width:   minWidth,
-		height:  minHeight,
-		hide:    newHideWiz(),
-		reveal:  newRevealWiz(),
+		version:   version,
+		width:     minWidth,
+		height:    minHeight,
+		hide:      newHideWiz(),
+		reveal:    newRevealWiz(),
+		report:    newReportWiz(modeScore),
+		inspector: newInspectorWiz(),
 	}
 }
 
@@ -117,6 +121,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applyRun(msg)
 	case revealMsg:
 		return m.applyReveal(msg), nil
+	case describeMsg:
+		return m.applyDescribe(msg), nil
+	case payloadMsg:
+		return m.applyPayload(msg), nil
 	}
 	return m, nil
 }
@@ -136,6 +144,14 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case screenReveal:
 		if next, cmd, handled := m.handleRevealKey(k); handled {
+			return next, cmd
+		}
+	case screenScore, screenCapacity:
+		if next, cmd, handled := m.handleReportKey(k); handled {
+			return next, cmd
+		}
+	case screenInspect:
+		if next, cmd, handled := m.handleInspectKey(k); handled {
 			return next, cmd
 		}
 	}
@@ -196,15 +212,26 @@ func (m Model) activate() (tea.Model, tea.Cmd) {
 	case screenReveal:
 		m.reveal.reset()
 		m.reveal.pick = newPicker(workingDir(), pngOnly)
+	case screenScore:
+		m.report.reset(modeScore)
+	case screenCapacity:
+		m.report.reset(modeCapacity)
+	case screenInspect:
+		m.inspector.reset()
 	}
 	return m, nil
 }
 
-// leaveFlow returns to the menu and drops whatever the flow was holding.
+// leaveFlow returns to the menu and drops whatever the flow was holding. The
+// generation bump discards any measurement still in flight, so a result for a
+// carrier the user has left cannot land on a later screen.
 func (m Model) leaveFlow() Model {
 	m.screen = screenMenu
+	m.gen++
 	m.hide.reset()
 	m.reveal.reset()
+	m.report.reset(m.report.mode)
+	m.inspector.reset()
 	return m
 }
 
@@ -279,22 +306,4 @@ func clearBytes(buf []byte) {
 	for i := range buf {
 		buf[i] = 0
 	}
-}
-
-func (m Model) title() string {
-	switch m.screen {
-	case screenHide:
-		return "Hide"
-	case screenReveal:
-		return "Reveal"
-	case screenScore:
-		return "Score"
-	case screenCapacity:
-		return "Capacity"
-	case screenInspect:
-		return "Inspect"
-	case screenHelp:
-		return "Help"
-	}
-	return "Wisanggeni"
 }

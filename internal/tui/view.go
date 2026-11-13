@@ -60,9 +60,12 @@ func (m Model) screenRows(inner int) []string {
 		return m.hideRows(inner, m.maxRows())
 	case screenReveal:
 		return m.revealRows(inner, m.maxRows())
-	default:
-		return m.flowRows()
+	case screenScore, screenCapacity:
+		return m.reportRows(inner, m.maxRows())
+	case screenInspect:
+		return m.inspectorRows(inner, m.maxRows())
 	}
+	return nil
 }
 
 func (m Model) menuRows(inner int) []string {
@@ -110,17 +113,6 @@ func (m Model) helpRows() []string {
 	return append(rows, "", styleDim.Render("wisanggeni "+m.version+" - CLI + TUI"))
 }
 
-func (m Model) flowRows() []string {
-	return []string{
-		"",
-		styleAccent.Render("▸ ") + styleAccentBold.Render(m.title()),
-		"",
-		styleWarn.Render("Not available in this build yet."),
-		"",
-		styleDim.Render("For now use the CLI: wisanggeni --help"),
-	}
-}
-
 // hint is one key/description pair in the footer.
 func hint(key, desc string) string {
 	return styleAccent.Render(key) + styleDim.Render(" "+desc)
@@ -142,6 +134,10 @@ func (m Model) hintBar(box int) string {
 		hints = m.hideHints()
 	case screenReveal:
 		hints = m.revealHints()
+	case screenScore, screenCapacity:
+		hints = m.reportHints()
+	case screenInspect:
+		hints = m.inspectHints()
 	default:
 		hints = []string{hint("esc", "back"), hint("?", "help"), hint("q", "quit")}
 	}
