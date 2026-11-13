@@ -48,15 +48,35 @@ type Carrier struct {
 	// Warnings are advisory findings: colour chunks, and lossy conversions
 	// from 16-bit, paletted or grayscale input.
 	Warnings []string
+
+	// Alpha reports that at least one pixel is not opaque. Load refuses such a
+	// carrier; Open returns it so a reporting command can say why (§5, §7.10).
+	Alpha bool
 }
 
 // Load decodes the carrier at path.
 //
 // The header is read first so that oversized images are rejected before a
-// pixel buffer exists (§11.24). The returned image is always *image.NRGBA with
-// Rect.Min = (0,0), whatever the file's colour type was, so callers never have
-// to think about RGBA vs NRGBA or about stride offsets.
+// pixel buffer exists (§11.24), and a carrier with a transparent pixel is
+// refused with ErrAlpha before its pixels are converted (§11.25). The returned
+// image is always *image.NRGBA with Rect.Min = (0,0), whatever the file's
+// colour type was, so callers never have to think about RGBA vs NRGBA or about
+// stride offsets.
 func Load(path string) (*Carrier, error) {
+	return open(path, false)
+}
+
+// Open decodes the carrier at path exactly like Load, except that it tolerates
+// transparency and reports it through Carrier.Alpha instead of failing. Only the
+// commands that report on a file use it, so they can describe a carrier the
+// engine would refuse; every embedding path needs Load.
+func Open(path string) (*Carrier, error) {
+	return open(path, true)
+}
+
+// open is the shared decoder behind Load and Open. allowAlpha lets a transparent
+// carrier through instead of returning ErrAlpha.
+func open(path string, allowAlpha bool) (*Carrier, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -90,16 +110,43 @@ func Load(path string) (*Carrier, error) {
 		return nil, fmt.Errorf("decode carrier: %w", err)
 	}
 
+	// Refuse transparency before converting anything when the caller cannot take
+	// it; the decode above already produced the pixels, but the conversion and
+	// its buffer do not have to happen.
+	alpha := false
+	if !isOpaque(src) {
+		if !allowAlpha {
+			return nil, ErrAlpha
+		}
+		alpha = true
+	}
+
 	pix, convertWarnings, err := normalize(src)
 	if err != nil {
 		return nil, err
+	}
+	// The check above cannot see through every colour model, so the converted
+	// result is checked too.
+	if !pix.Opaque() {
+		if !allowAlpha {
+			return nil, ErrAlpha
+		}
+		alpha = true
 	}
 
 	warnings := make([]string, 0, len(chunkWarnings)+len(convertWarnings))
 	warnings = append(warnings, chunkWarnings...)
 	warnings = append(warnings, convertWarnings...)
 
-	return &Carrier{Image: pix, Chunks: chunks, Warnings: warnings}, nil
+	return &Carrier{Image: pix, Chunks: chunks, Warnings: warnings, Alpha: alpha}, nil
+}
+
+// isOpaque reports a decoded image's transparency when its concrete type can
+// answer cheaply. An unknown type counts as opaque and is re-checked after
+// normalisation.
+func isOpaque(img image.Image) bool {
+	o, ok := img.(interface{ Opaque() bool })
+	return !ok || o.Opaque()
 }
 
 // checkDimensions enforces the two limits that have to hold before decoding:
@@ -118,15 +165,12 @@ func checkDimensions(w, h int) error {
 }
 
 // normalize converts any decoded image into the one shape the engine accepts.
+// Lossy conversions are reported as warnings; transparency is not its concern,
+// because Load and Open decide what to do about it.
 func normalize(src image.Image) (*image.NRGBA, []string, error) {
 	bounds := src.Bounds()
 	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
 		return nil, nil, ErrEmpty
-	}
-
-	// Reject transparency before allocating anything.
-	if o, ok := src.(interface{ Opaque() bool }); ok && !o.Opaque() {
-		return nil, nil, ErrAlpha
 	}
 
 	var warnings []string
@@ -143,11 +187,5 @@ func normalize(src image.Image) (*image.NRGBA, []string, error) {
 
 	dst := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 	draw.Draw(dst, dst.Bounds(), src, bounds.Min, draw.Src)
-
-	// The type switch above cannot see through every colour model, so the
-	// converted result is checked too.
-	if !dst.Opaque() {
-		return nil, nil, ErrAlpha
-	}
 	return dst, warnings, nil
 }

@@ -89,9 +89,34 @@ func TestRejectAlpha(t *testing.T) {
 		img.Pix[i+3] = 200
 	}
 
-	_, err := carrier.Load(writePNGFile(t, encodePNG(t, img)))
-	if !errors.Is(err, carrier.ErrAlpha) {
+	path := writePNGFile(t, encodePNG(t, img))
+	if _, err := carrier.Load(path); !errors.Is(err, carrier.ErrAlpha) {
 		t.Fatalf("Load error = %v, want ErrAlpha", err)
+	}
+
+	// Open is the same decode without the refusal, for the reporting commands.
+	c, err := carrier.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if !c.Alpha {
+		t.Error("Alpha = false, want true")
+	}
+	if got, want := c.Image.Rect, image.Rect(0, 0, 4, 4); got != want {
+		t.Errorf("Rect = %v, want %v", got, want)
+	}
+	if c.Image.Opaque() {
+		t.Error("normalised image is opaque, want the transmitted alpha preserved")
+	}
+}
+
+func TestOpenReportsOpaqueCarrier(t *testing.T) {
+	c, err := carrier.Open(writePNGFile(t, encodePNG(t, gradient(8, 8))))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if c.Alpha {
+		t.Error("Alpha = true for an opaque carrier")
 	}
 }
 
