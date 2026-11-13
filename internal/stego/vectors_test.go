@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/bits"
 	"math/rand/v2"
+	"slices"
 	"testing"
 
 	"github.com/a-axa/wisanggeni/internal/format"
@@ -68,7 +69,13 @@ func TestChannelRGB(t *testing.T) {
 func TestSaltPositionsGolden(t *testing.T) {
 	// T = 192 comes from an 8x8 carrier, the smallest image used by the cost
 	// map vector. Salt uses the dense shuffle because 128 > n/10.
-	got := saltPositions(t, 192)
+	got := stego.SaltPositions(192)
+
+	// Cross-check against an independent implementation of §7.1, so the vector
+	// pins the algorithm and not just the number.
+	if ref := saltPositions(t, 192); !slices.Equal(got, ref) {
+		t.Errorf("SaltPositions(192) diverges from the reference shuffle")
+	}
 
 	first := []uint32{148, 65, 169, 39, 146, 140, 26, 187}
 	for i, want := range first {
