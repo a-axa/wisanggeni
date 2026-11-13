@@ -25,7 +25,7 @@ func newTUICmd() *cobra.Command {
 func runTUI(cmd *cobra.Command) error {
 	out := cmd.OutOrStdout()
 	if !isTerminal(out) {
-		return fail(ExitError, "stdout is not a terminal; use the subcommands instead")
+		return fail("stdout is not a terminal; use the subcommands instead")
 	}
 	// The worker goroutines behind a hide/reveal job cannot touch the Model
 	// directly, so they post stage updates through tea.Program.Send. The model is
@@ -43,7 +43,7 @@ func runTUI(cmd *cobra.Command) error {
 		tea.WithOutput(out),
 	)
 	if _, err := program.Run(); err != nil {
-		return fail(ExitError, "TUI failed: %v", err)
+		return fail("TUI failed: %v", err)
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/a-axa/wisanggeni/internal/carrier"
+	"github.com/a-axa/wisanggeni/internal/inspect"
 	"github.com/a-axa/wisanggeni/internal/stego"
 )
 
@@ -35,15 +36,17 @@ func runScore(cmd *cobra.Command, args []string) error {
 	}
 
 	width, height := car.Image.Rect.Dx(), car.Image.Rect.Dy()
-	stats := stego.CoverScore(car.Image)
+	// Score always: a verdict is still the most useful thing to say about a
+	// transparent carrier, even though the engine will refuse to embed in it.
+	info := inspect.Describe(car, true)
 
 	out := cmd.OutOrStdout()
 	_, _ = fmt.Fprintf(out, "file                %s\n", args[0])
 	_, _ = fmt.Fprintf(out, "dimensions          %dx%d\n", width, height)
 	_, _ = fmt.Fprintf(out, "textured fraction   %.3f (%.2f is the suitable threshold)\n",
-		stats.TexturedFraction, stego.TexturedFractionGood)
-	_, _ = fmt.Fprintf(out, "median rho          %.6g\n", stats.MedianRho)
-	_, _ = fmt.Fprintf(out, "verdict             %s\n", stats.Verdict)
+		info.Score.TexturedFraction, stego.TexturedFractionGood)
+	_, _ = fmt.Fprintf(out, "median rho          %.6g\n", info.Score.MedianRho)
+	_, _ = fmt.Fprintf(out, "verdict             %s\n", info.Score.Verdict)
 	if car.Alpha {
 		_, _ = fmt.Fprintf(out, "note                the carrier has transparency and cannot be used\n")
 	}

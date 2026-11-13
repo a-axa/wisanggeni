@@ -43,7 +43,7 @@ func runReveal(cmd *cobra.Command, args []string) error {
 	force := flagBool(cmd, "force")
 	maxOutput := flagInt64(cmd, "max-output")
 	if maxOutput <= 0 {
-		return fail(ExitError, "--max-output must be positive")
+		return fail("--max-output must be positive")
 	}
 
 	warn := notifier(cmd, false)

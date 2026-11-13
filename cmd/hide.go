@@ -43,10 +43,10 @@ func runHide(cmd *cobra.Command, inputs []string) error {
 	quiet := flagBool(cmd, "quiet")
 
 	if carrierPath == "" {
-		return fail(ExitError, "--carrier is required")
+		return fail("--carrier is required")
 	}
 	if outputPath == "" {
-		return fail(ExitError, "--output is required")
+		return fail("--output is required")
 	}
 
 	warn := notifier(cmd, quiet)
