@@ -1,16 +1,73 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/a-axa/wisanggeni/internal/carrier"
+	"github.com/a-axa/wisanggeni/internal/stego"
+)
 
 func newCapacityCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "capacity <carrier.png>",
 		Short: "Report how much a carrier can hold",
 		Long: `Capacity prints the carrier dimensions and all four capacity numbers
-(§6.1), the cover score, and whether the carrier has alpha or colour chunks.`,
+(§6.1), the cover score, and whether the carrier has alpha or colour chunks.
+
+Nothing is written and no passphrase is needed.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(*cobra.Command, []string) error {
-			return notImplemented("capacity")
-		},
+		RunE: runCapacity,
 	}
+}
+
+func runCapacity(cmd *cobra.Command, args []string) error {
+	// Open rather than Load: a transparent carrier still deserves a report that
+	// says why it cannot be used.
+	car, err := carrier.Open(args[0])
+	if err != nil {
+		return err
+	}
+	warn := notifier(cmd, false)
+	for _, msg := range car.Warnings {
+		warn("%s", msg)
+	}
+
+	width, height := car.Image.Rect.Dx(), car.Image.Rect.Dy()
+	out := cmd.OutOrStdout()
+
+	_, _ = fmt.Fprintf(out, "file          %s\n", args[0])
+	_, _ = fmt.Fprintf(out, "dimensions    %dx%d\n", width, height)
+	_, _ = fmt.Fprintf(out, "channels      %d\n", stego.Channels(width, height))
+	_, _ = fmt.Fprintf(out, "capacity raw  %d bytes\n", stego.CapacityRaw(width, height))
+	_, _ = fmt.Fprintf(out, "usable        %d bytes\n", stego.Capacity(width, height))
+	_, _ = fmt.Fprintf(out, "suggested     %d bytes (10%% fill)\n", stego.SuggestedCapacity(width, height))
+	_, _ = fmt.Fprintf(out, "strong        %d bytes (5%% fill)\n", stego.StrongCapacity(width, height))
+
+	if car.Alpha {
+		_, _ = fmt.Fprintf(out, "cover         not scored\n")
+		_, _ = fmt.Fprintf(out, "alpha         yes; transparent carriers are not supported, so nothing can be hidden\n")
+	} else {
+		stats := stego.CoverScore(car.Image)
+		_, _ = fmt.Fprintf(out, "cover         %s (textured_fraction %.3f, median_rho %.6g)\n",
+			stats.Verdict, stats.TexturedFraction, stats.MedianRho)
+		_, _ = fmt.Fprintf(out, "alpha         no\n")
+	}
+
+	_, _ = fmt.Fprintf(out, "chunks        %s\n", chunkList(car.Chunks))
+	return nil
+}
+
+// chunkList names the carrier's preserved chunks in file order.
+func chunkList(chunks []carrier.Chunk) string {
+	if len(chunks) == 0 {
+		return "none"
+	}
+	types := make([]string, len(chunks))
+	for i, c := range chunks {
+		types[i] = c.Type
+	}
+	return strings.Join(types, ", ")
 }
