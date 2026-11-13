@@ -122,6 +122,13 @@ Vector: `internal/format/hkdf_test.go`, `internal/format/nfkc_test.go`.
 - The payload (the blob after the salt: 80-byte prefix + body) is written with
   STC over `P'`. At the frozen code rate of 1/2, each payload byte occupies 16
   consecutive `P'` channels (§10).
+- At the stego level the blob is split exactly like this: the first
+  `format.SaltSize` (16) bytes go to `S` with plain LSB matching, and the
+  remaining bytes go through STC over `P'`. The reader recovers the salt first
+  (it needs no key), derives `pos_seed` from it, and only then can build `P'`.
+  `stego.EmbedBlob` / `ExtractBlob` / `VerifyBlob` implement this split
+  (§7.8 steps 10-14, §7.9 steps 3-8); `VerifyBlob` is the writer's self-check
+  and reports `ErrVerify` on any mismatch.
 
 Constants: `stego.SaltChannels = 128`, `format.LabelSaltPos`.
 Vector: `TestSaltPositionsGolden`.
