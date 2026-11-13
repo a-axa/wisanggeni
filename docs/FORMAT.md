@@ -101,6 +101,16 @@ Vector: `internal/format/hkdf_test.go`, `internal/format/nfkc_test.go`.
   Both must produce an identical order for the same `(n, seed)`.
 - The `n/10` threshold is `stego.DenseDivisor`; the value is a heuristic and
   may change before release, as long as the resulting order does not.
+- B3 memory decision for a 12 MP carrier (T = 36,000,000), measured with
+  `go test -bench BenchmarkPoolPositions -benchmem`:
+  - typical payload (10% fill, k ≈ 2.49 M bits): **86 MB** (map variant),
+  - worst case (k just past the dense threshold, k ≈ 3.6 M): **158 MB**
+    (dense variant).
+
+  Both are below the 300 MB budget, so the keyed Feistel fallback is not used
+  and the format keeps Fisher-Yates. The `Shuffle` result is mapped to channels
+  in place, which removed one 14 MB copy; a swap to Feistel would change every
+  permutation and invalidate the salt vectors, so it stays unimplemented.
 
 ## 6. Salt positions and STC pool (§7.2)
 

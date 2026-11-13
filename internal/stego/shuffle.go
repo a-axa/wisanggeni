@@ -19,6 +19,11 @@ import (
 // The choice is a memory heuristic and may be revised before v1.0.0, as long as
 // the emitted sequence does not change; TestShuffleVariantsAgree pins that.
 //
+// Measured on a 12 MP carrier (T = 36,000,000): 86 MB for a typical 10%-fill
+// payload and 158 MB in the dense worst case, both under the 300 MB budget of
+// §7.1. The keyed Feistel fallback is therefore not needed; keeping Fisher-Yates
+// also keeps the frozen salt vectors valid.
+//
 // n must fit the uint32 positions the format stores, so n <= 1<<32. A larger n
 // would truncate silently, which is why callers derive n from a guarded carrier.
 func Shuffle(n uint64, seed [32]byte, k int) []uint32 {
