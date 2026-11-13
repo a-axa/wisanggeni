@@ -3,3 +3,10 @@
 # build output
 bin/
 dist/
+
+# local scratch and walkthrough folders, never part of the repo
+/tmp-try/
+/tmp-latihan/
+/tmp-pty/
+/tmp-pty2/
+/tmp-demo/

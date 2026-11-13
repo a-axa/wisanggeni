@@ -38,8 +38,9 @@ type UnpackOptions struct {
 	// Compressed says the payload is zstd, i.e. header_plain.flags bit 0.
 	Compressed bool
 
-	// MaxBytes caps the decompressed size. Zero means DefaultMaxBytes; a
-	// negative value removes the cap.
+	// MaxBytes caps the decompressed size. Zero means DefaultMaxBytes. A
+	// negative value is also treated as DefaultMaxBytes, for the reason given
+	// on ListOptions.MaxBytes.
 	MaxBytes int64
 
 	// Force allows replacing existing files.
@@ -77,10 +78,7 @@ type Unpacked struct {
 // link cannot be used to redirect a write. Permission bits are masked to 0o777,
 // dropping setuid and setgid.
 func Unpack(data []byte, dir string, opts UnpackOptions) (Unpacked, error) {
-	maxBytes := opts.MaxBytes
-	if maxBytes == 0 {
-		maxBytes = DefaultMaxBytes
-	}
+	maxBytes := capBytes(opts.MaxBytes)
 
 	payload, err := decodePayload(data, opts.Compressed, maxBytes)
 	if err != nil {

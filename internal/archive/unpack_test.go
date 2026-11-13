@@ -250,6 +250,34 @@ func TestUnpackMaxOutput(t *testing.T) {
 	}
 }
 
+func TestUnpackNonPositiveMaxBytesIsNotUnlimited(t *testing.T) {
+	t.Parallel()
+	// Regression: a negative MaxBytes used to mean "no cap", so a compressed
+	// bomb expanded until the process was OOM-killed. It must now resolve to the
+	// default cap, which is what makes the bomb test below meaningful for every
+	// value the CLI and the library can pass.
+	raw := buildTar(t, reg("zeros.bin", make([]byte, 1<<20)))
+
+	p, err := archive.Pack([]string{mustFile(t, raw)}, archive.Options{})
+	if err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+	if !p.Compressed {
+		t.Skip("payload did not compress; bomb test not applicable")
+	}
+
+	// One byte budget that is certainly smaller than the default cap proves the
+	// cap is applied, not skipped, for both a negative and a zero value.
+	for _, maxBytes := range []int64{-1, 0} {
+		if _, err := archive.Unpack(p.Data, t.TempDir(), archive.UnpackOptions{
+			Compressed: true,
+			MaxBytes:   maxBytes,
+		}); err != nil {
+			t.Fatalf("Unpack with MaxBytes=%d = %v, want success under the default cap", maxBytes, err)
+		}
+	}
+}
+
 func TestUnpackCompressedBombIsCapped(t *testing.T) {
 	t.Parallel()
 	// 1 MiB of zeros compresses tiny but expands past a small cap.
