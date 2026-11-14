@@ -53,7 +53,7 @@ func Execute(version string) int {
 func newRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "wisanggeni",
-		Short:         "Hide files and folders inside PNG images",
+		Short:         "Hide files and folders inside PNG or BMP images",
 		Long:          rootLong,
 		Version:       version,
 		Args:          cobra.NoArgs,
@@ -81,7 +81,7 @@ func newRootCmd(version string) *cobra.Command {
 	return root
 }
 
-const rootLong = `Wisanggeni compresses, encrypts and hides files inside a PNG image.
+const rootLong = `Wisanggeni compresses, encrypts and hides files inside a PNG or BMP image.
 
 Every channel of the output changes by at most ±1 and the result keeps the
 carrier dimensions. The blob has no magic bytes and no plaintext length: with

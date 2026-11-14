@@ -1,6 +1,7 @@
-// Package carrier loads PNG carriers, normalises them to 8-bit NRGBA, and
-// writes the stego image back while preserving the colour-management chunks
-// (§7.7, §11.23-26).
+// Package carrier loads PNG and BMP carriers, normalises them to 8-bit NRGBA,
+// and writes the stego image back. PNG output preserves the colour-management
+// chunks (§7.7, §11.23-26); BMP has no ancillary chunks, so there is nothing to
+// carry over.
 //
 // Everything here runs before any stego or crypto code, so failures stay easy
 // to localise: a carrier is either acceptable or rejected with a specific
@@ -16,12 +17,21 @@ import (
 	"io"
 	"os"
 
+	"golang.org/x/image/bmp"
+
 	"github.com/a-axa/wisanggeni/internal/format"
 )
 
 var (
 	// ErrNotPNG reports a file that is not a PNG image.
 	ErrNotPNG = errors.New("carrier is not a PNG image")
+
+	// ErrNotBMP reports a file that is not a BMP image.
+	ErrNotBMP = errors.New("carrier is not a BMP image")
+
+	// ErrUnsupportedFormat reports a carrier whose format is recognised but not
+	// supported. Today that means anything that is neither PNG nor BMP.
+	ErrUnsupportedFormat = errors.New("carrier format is not supported")
 
 	// ErrTooLarge reports dimensions the format cannot address. It is raised
 	// from the header alone, before any pixel buffer is allocated.
@@ -54,7 +64,8 @@ type Carrier struct {
 	Alpha bool
 }
 
-// Load decodes the carrier at path.
+// Load decodes the carrier at path, which may be a PNG or a BMP. The format is
+// sniffed from the content, not the extension.
 //
 // The header is read first so that oversized images are rejected before a
 // pixel buffer exists (§11.24), and a carrier with a transparent pixel is
@@ -76,6 +87,10 @@ func Open(path string) (*Carrier, error) {
 
 // open is the shared decoder behind Load and Open. allowAlpha lets a transparent
 // carrier through instead of returning ErrAlpha.
+//
+// The format is sniffed from the file's magic bytes rather than trusted from the
+// extension, so a PNG renamed to .bmp (or the reverse) still decodes as what it
+// actually is, and a file that is neither is rejected with a specific error.
 func open(path string, allowAlpha bool) (*Carrier, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -83,31 +98,48 @@ func open(path string, allowAlpha bool) (*Carrier, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	cfg, kind, err := image.DecodeConfig(f)
+	kind, err := sniff(f)
 	if err != nil {
-		return nil, fmt.Errorf("read carrier header: %w", err)
+		return nil, err
 	}
-	if kind != "png" {
-		return nil, fmt.Errorf("%w: decoded as %q", ErrNotPNG, kind)
+
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	cfg, decoded, err := image.DecodeConfig(f)
+	if err != nil {
+		// A file that sniffed as PNG but whose header the decoder rejects is a
+		// broken PNG, not an unsupported format; say so, so the caller learns
+		// which format was being read.
+		return nil, fmt.Errorf("%w: %w", notKindError(kind), err)
+	}
+	if decoded != kind {
+		return nil, fmt.Errorf("%w: header says %q, content is %q", ErrUnsupportedFormat, kind, decoded)
 	}
 	if err := checkDimensions(cfg.Width, cfg.Height); err != nil {
 		return nil, err
 	}
 
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
-	chunks, chunkWarnings, err := readChunks(f)
-	if err != nil {
-		return nil, err
+	var (
+		chunks   []Chunk
+		warnings []string
+	)
+	if kind == formatPNG {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+		chunks, warnings, err = readChunks(f)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	src, err := png.Decode(f)
+	src, err := decode(f, kind)
 	if err != nil {
-		return nil, fmt.Errorf("decode carrier: %w", err)
+		return nil, err
 	}
 
 	// Refuse transparency before converting anything when the caller cannot take
@@ -134,11 +166,44 @@ func open(path string, allowAlpha bool) (*Carrier, error) {
 		alpha = true
 	}
 
-	warnings := make([]string, 0, len(chunkWarnings)+len(convertWarnings))
-	warnings = append(warnings, chunkWarnings...)
-	warnings = append(warnings, convertWarnings...)
+	all := make([]string, 0, len(warnings)+len(convertWarnings))
+	all = append(all, warnings...)
+	all = append(all, convertWarnings...)
 
-	return &Carrier{Image: pix, Chunks: chunks, Warnings: warnings, Alpha: alpha}, nil
+	return &Carrier{Image: pix, Chunks: chunks, Warnings: all, Alpha: alpha}, nil
+}
+
+// decode dispatches to the decoder for a sniffed format.
+func decode(r io.Reader, kind string) (image.Image, error) {
+	var (
+		src image.Image
+		err error
+	)
+	switch kind {
+	case formatPNG:
+		src, err = png.Decode(r)
+	case formatBMP:
+		src, err = bmp.Decode(r)
+	default:
+		return nil, fmt.Errorf("%w: %q", ErrUnsupportedFormat, kind)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("decode carrier: %w", fmt.Errorf("%w: %w", notKindError(kind), err))
+	}
+	return src, nil
+}
+
+// notKindError maps a sniffed format to the error that names it, so a caller
+// can tell a broken PNG from a broken BMP.
+func notKindError(kind string) error {
+	switch kind {
+	case formatPNG:
+		return ErrNotPNG
+	case formatBMP:
+		return ErrNotBMP
+	default:
+		return ErrUnsupportedFormat
+	}
 }
 
 // isOpaque reports a decoded image's transparency when its concrete type can

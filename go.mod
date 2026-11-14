@@ -8,6 +8,7 @@ require (
 	github.com/klauspost/compress v1.17.11
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.31.0
+	golang.org/x/image v0.18.0
 	golang.org/x/term v0.27.0
 	golang.org/x/text v0.21.0
 )

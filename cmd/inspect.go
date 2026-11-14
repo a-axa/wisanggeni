@@ -18,9 +18,9 @@ const inspectPromptLabel = "Passphrase (Enter to skip): "
 
 func newInspectCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "inspect <image.png>",
+		Use:   "inspect <image>",
 		Short: "Show carrier and payload information",
-		Long: `Inspect reports what a PNG is and what it hides.
+		Long: `Inspect reports what an image is and what it hides.
 
 Without a passphrase it prints the carrier layer only — dimensions, capacity,
 cover score, alpha and colour chunks — exactly like "capacity". With one it also

@@ -12,9 +12,13 @@ import (
 func newHideCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "hide <input...>",
-		Short: "Hide files or folders inside a PNG carrier",
+		Short: "Hide files or folders inside an image carrier",
 		Long: `Hide packs the inputs (§5.1), encrypts the result and embeds it into the
-carrier image. The carrier is never modified; output goes to a new PNG.
+carrier image. The carrier is never modified; output goes to a new image.
+
+The carrier and the output may be PNG or BMP. The format is sniffed from the
+file's content, not from its name, and the output format follows the output
+extension (.bmp writes a BMP, anything else writes a PNG).
 
 The carrier is scored and the payload is measured before the passphrase is
 asked for, so an impossible job fails without making you type it.`,
@@ -23,8 +27,8 @@ asked for, so an impossible job fails without making you type it.`,
 	}
 
 	flags := cmd.Flags()
-	flags.StringP("carrier", "c", "", "carrier PNG image (required)")
-	flags.StringP("output", "o", "", "output PNG path (required)")
+	flags.StringP("carrier", "c", "", "carrier image, PNG or BMP (required)")
+	flags.StringP("output", "o", "", "output image path; .bmp for BMP, else PNG (required)")
 	flags.Bool("no-compress", false, "skip zstd compression")
 	flags.Bool("no-verify", false, "skip post-write verification (not recommended)")
 	flags.Bool("force", false, "allow overwriting output, fill > 10%, and smooth covers")

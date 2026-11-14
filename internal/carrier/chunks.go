@@ -148,14 +148,14 @@ func indexChunks(buf []byte) ([]chunkRef, error) {
 	}
 }
 
-// Save writes img to path as an 8-bit RGB PNG, keeping chunks in their
+// savePNG writes img to path as an 8-bit RGB PNG, keeping chunks in their
 // original order and recomputing every CRC (§7.7). The file is created or
 // truncated; callers that need atomic replacement write to a temporary path
 // and rename afterwards.
 //
 // Chunk types outside format.PreservedChunks are ignored, so a caller cannot
 // smuggle EXIF or text back into the output.
-func Save(path string, img *image.NRGBA, chunks []Chunk) error {
+func savePNG(path string, img *image.NRGBA, chunks []Chunk) error {
 	if img == nil {
 		return ErrEmpty
 	}
