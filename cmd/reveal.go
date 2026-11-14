@@ -15,8 +15,8 @@ const DefaultMaxOutput int64 = 1 << 30
 
 func newRevealCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "reveal <image.png>",
-		Short: "Extract the hidden files from a PNG",
+		Use:   "reveal <image>",
+		Short: "Extract the hidden files from an image",
 		Long: `Reveal decrypts the hidden blob and unpacks it into the output directory.
 Archives are treated as untrusted: absolute paths, "..", symlinks and device
 nodes are rejected.`,

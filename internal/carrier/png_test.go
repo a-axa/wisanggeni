@@ -141,7 +141,7 @@ func TestRejectTooLargeBeforeDecode(t *testing.T) {
 	}
 }
 
-func TestRejectNonPNG(t *testing.T) {
+func TestRejectNonImage(t *testing.T) {
 	pal := image.NewPaletted(image.Rect(0, 0, 2, 2), color.Palette{
 		color.RGBA{255, 0, 0, 255},
 		color.RGBA{0, 0, 255, 255},
@@ -151,7 +151,25 @@ func TestRejectNonPNG(t *testing.T) {
 		t.Fatalf("encode gif: %v", err)
 	}
 
+	// A GIF is neither PNG nor BMP, so the format sniff rejects it before any
+	// decoder runs.
 	_, err := carrier.Load(writePNGFile(t, buf.Bytes()))
+	if !errors.Is(err, carrier.ErrNotImage) {
+		t.Fatalf("Load error = %v, want ErrNotImage", err)
+	}
+	if errors.Is(err, carrier.ErrNotPNG) {
+		t.Fatal("ErrNotImage should not also report ErrNotPNG; the formats are distinct")
+	}
+}
+
+func TestRejectCorruptPNG(t *testing.T) {
+	// A real PNG signature followed by a broken header: the sniff passes, so the
+	// failure has to come from the PNG decoder and name PNG, not the general
+	// unsupported-format error.
+	raw := append([]byte{}, []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}...)
+	raw = append(raw, 0xff, 0xff, 0xff, 0xff, 'I', 'H', 'D', 'R')
+
+	_, err := carrier.Load(writePNGFile(t, raw))
 	if !errors.Is(err, carrier.ErrNotPNG) {
 		t.Fatalf("Load error = %v, want ErrNotPNG", err)
 	}

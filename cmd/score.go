@@ -12,7 +12,7 @@ import (
 
 func newScoreCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "score <carrier.png>",
+		Use:   "score <carrier>",
 		Short: "Classify a carrier as a cover",
 		Long: `Score reports textured_fraction, median_rho and the verdict of §7.5.
 It needs no passphrase and never writes anything.

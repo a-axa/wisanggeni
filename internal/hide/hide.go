@@ -45,7 +45,7 @@ const (
 	// StageEmbed computes the cost map and runs STC.
 	StageEmbed
 
-	// StageSave writes the PNG and its colour chunks.
+	// StageSave writes the carrier image in the output format.
 	StageSave
 
 	// StageVerify reopens the output and checks the blob round-trips.
@@ -64,7 +64,7 @@ func (s Stage) String() string {
 	case StageEmbed:
 		return "STC embed"
 	case StageSave:
-		return "Save PNG"
+		return "Save image"
 	case StageVerify:
 		return "Verify"
 	default:
@@ -77,10 +77,11 @@ type Options struct {
 	// Inputs are the files and folders to pack (§5.1).
 	Inputs []string
 
-	// CarrierPath is the PNG to embed into. It is never modified.
+	// CarrierPath is the image to embed into. It is never modified.
 	CarrierPath string
 
-	// OutputPath is where the stego PNG is written.
+	// OutputPath is where the stego image is written. Its extension picks the
+	// output format: .bmp writes a BMP, anything else writes a PNG.
 	OutputPath string
 
 	// NoCompress skips zstd, for `hide --no-compress`.
@@ -147,7 +148,8 @@ type Plan struct {
 	// Compressed reports whether the payload is zstd, i.e. the header flag bit.
 	Compressed bool
 
-	// Chunks are the types of the carrier chunks kept in the output.
+	// Chunks are the types of the carrier chunks kept in the output. A BMP
+	// carrier has none, so the list is empty for it.
 	Chunks []string
 
 	// Warnings are the advisory messages produced so far, in order.
@@ -452,7 +454,14 @@ func checkOutput(carrierPath, outputPath string, force bool) error {
 // the temporary file, so a broken run never leaves a half-written output.
 func (p *Plan) writeAtomic(blob []byte, posSeed [32]byte, verify bool, progress func(Stage)) error {
 	dir := filepath.Dir(p.OutputPath)
-	tmp, err := os.CreateTemp(dir, ".wisanggeni-*.png")
+	// The temporary file keeps the output's extension, because carrier.Save
+	// chooses the encoder from the file name. A .bmp output written to a .png
+	// temporary would be encoded as PNG and verified as the wrong format.
+	pattern := ".wisanggeni-*"
+	if ext := filepath.Ext(p.OutputPath); ext != "" {
+		pattern += ext
+	}
+	tmp, err := os.CreateTemp(dir, pattern)
 	if err != nil {
 		return fmt.Errorf("create temporary output: %w", err)
 	}
